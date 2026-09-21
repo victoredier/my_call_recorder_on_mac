@@ -2,19 +2,34 @@
 
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
-
-# Change to the script directory
 cd "$SCRIPT_DIR" || exit 1
 
-# Check if the virtual environment exists
-if [ -d "venv" ]; then
-    # Activate the virtual environment
+# Check if the virtual environment exists, if not create it automatically
+if [ ! -d "venv" ]; then
+    echo "⚙️  No se encontró entorno virtual. Creando venv en $SCRIPT_DIR/venv..."
+    python3 -m venv venv
+    if [ $? -ne 0 ]; then
+        echo "❌ Error: No se pudo crear el entorno virtual. Verifica que tengas Python 3 instalado."
+        exit 1
+    fi
+    echo "📦 Instalando dependencias desde requirements.txt..."
     source venv/bin/activate
+    pip install --upgrade pip
+    pip install -r requirements.txt
+    if [ $? -ne 0 ]; then
+        echo "❌ Error instalando dependencias. Revisa los errores anteriores."
+        exit 1
+    fi
+    echo "✅ Entorno virtual y dependencias listas."
 else
-    echo "Warning: No virtual environment found at $SCRIPT_DIR/venv"
-    echo "Attempting to run without virtual environment..."
+    # Activate existing virtual environment
+    source venv/bin/activate
+    # Check if rumps is installed, if not install requirements
+    if ! python3 -c "import rumps" &>/dev/null; then
+        echo "📦 Instalando dependencias faltantes en el entorno virtual..."
+        pip install -r requirements.txt
+    fi
 fi
 
-# Run the application
-# Use python3 to ensure we're using Python 3
-python3 main.py
+# Run the application using the virtual environment's python
+exec python3 main.py
