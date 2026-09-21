@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Call Recorder & Transcriber</title>
+  <link rel="stylesheet" href="/style.css">
+</head>
+<body>
+  <div class="app-container">
+    <!-- Header -->
+    <header class="app-header">
+      <div class="header-brand">
+        <span class="app-icon">🎙️</span>
+        <div>
+          <h1>Call Recorder</h1>
+          <span class="subtitle">Grabaciones y Transcripción Inteligente</span>
+        </div>
+      </div>
+      <div class="header-actions">
+        <button id="btnOpenFinder" class="btn btn-secondary" title="Abrir carpeta de grabaciones en Finder">
+          📂 Abrir en Finder
+        </button>
+        <button id="btnConfigModal" class="btn btn-secondary" title="Configurar API de Gemini">
+          <span id="apiKeyBadge" class="status-indicator">●</span>
+          ⚙️ Ajustes Gemini
+        </button>
+      </div>
+    </header>
+
+    <!-- Main Layout -->
+    <div class="main-layout">
+      <!-- Sidebar / Calls List -->
+      <aside class="sidebar">
+        <div class="sidebar-header">
+          <div class="search-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="searchInput" placeholder="Buscar llamada o texto..." />
+          </div>
+          <div class="sidebar-meta">
+            <span id="meetingsCount">0 llamadas</span>
+            <button id="btnRefreshList" class="btn-icon" title="Actualizar lista">🔄</button>
+          </div>
+        </div>
+        <div class="meetings-list" id="meetingsList">
+          <!-- Populated by JS -->
+          <div class="empty-list-placeholder">Cargando grabaciones...</div>
+        </div>
+      </aside>
+
+      <!-- Main Content / Meeting Detail -->
+      <main class="content-panel" id="contentPanel">
+        <div class="empty-state" id="emptyState">
+          <div class="empty-state-icon">🎧</div>
+          <h2>Selecciona una llamada</h2>
+          <p>Elige una llamada de la lista de la izquierda para reproducir el audio, ver y editar la transcripción o transcribir con Gemini.</p>
+        </div>
+
+        <div class="meeting-detail" id="meetingDetail" style="display: none;">
+          <!-- Meeting Title Bar -->
+          <div class="detail-header">
+            <div class="title-container">
+              <input type="text" id="meetingNameInput" class="meeting-title-input" placeholder="Nombre de la llamada" />
+              <button id="btnSaveName" class="btn btn-sm btn-primary">Guardar Nombre</button>
+            </div>
+            <div class="detail-actions">
+              <button id="btnOpenMeetingFolder" class="btn btn-secondary btn-sm" title="Abrir carpeta de esta reunión">📂 Carpeta</button>
+              <button id="btnDeleteMeeting" class="btn btn-danger btn-sm" title="Eliminar reunión">🗑️ Eliminar</button>
+            </div>
+          </div>
+
+          <!-- Metadata Tags -->
+          <div class="metadata-row">
+            <span class="meta-tag" id="metaDate">📅 -</span>
+            <span class="meta-tag" id="metaDuration">⏱️ 00:00</span>
+            <span class="meta-tag" id="metaStatus">Grabado</span>
+            <span class="meta-tag folder-tag" id="metaFolder" title="Nombre de carpeta">📁 -</span>
+          </div>
+
+          <!-- Audio Player Card -->
+          <div class="card audio-card">
+            <audio id="audioPlayer" preload="metadata" controls></audio>
+            <div class="playback-controls">
+              <span class="speed-label">Velocidad:</span>
+              <div class="speed-buttons">
+                <button class="btn-speed active" data-speed="1.0">1.0x</button>
+                <button class="btn-speed" data-speed="1.25">1.25x</button>
+                <button class="btn-speed" data-speed="1.5">1.5x</button>
+                <button class="btn-speed" data-speed="2.0">2.0x</button>
+              </div>
+            </div>
+          </div>
+
+          <!-- Action Toolbar -->
+          <div class="card actions-toolbar">
+            <div class="transcribe-group">
+              <button id="btnTranscribe" class="btn btn-gemini">
+                <span class="gemini-sparkle">✨</span> Transcribir con Gemini
+              </button>
+              <select id="selectModel" class="select-model">
+                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Rápido y preciso)</option>
+                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Máxima capacidad)</option>
+              </select>
+            </div>
+            <div class="export-group">
+              <button id="btnSaveTranscript" class="btn btn-primary" title="Guardar cambios de texto y speakers">
+                💾 Guardar Cambios
+              </button>
+              <button id="btnExportJson" class="btn btn-secondary" title="Descargar transcript.json">
+                📥 Exportar JSON
+              </button>
+              <button id="btnCopyText" class="btn btn-secondary" title="Copiar texto con formato">
+                📋 Copiar
+              </button>
+            </div>
+          </div>
+
+          <!-- Progress / Status Banner -->
+          <div id="statusBanner" class="status-banner" style="display: none;"></div>
+
+          <!-- Speakers Section -->
+          <div class="card speakers-card" id="speakersCard" style="display: none;">
+            <div class="card-header">
+              <h3>👥 Identificación de Speakers</h3>
+              <span class="card-subtitle">Asigna los nombres reales a los participantes identificados</span>
+            </div>
+            <div class="speakers-list" id="speakersList">
+              <!-- Populated by JS -->
+            </div>
+            <div class="speakers-footer">
+              <button id="btnApplySpeakers" class="btn btn-sm btn-secondary">
+                🔄 Aplicar nombres a todos los segmentos
+              </button>
+              <button id="btnAddSpeaker" class="btn btn-sm btn-outline">
+                + Agregar Speaker
+              </button>
+            </div>
+          </div>
+
+          <!-- Transcript Segments Section -->
+          <div class="card transcript-card" id="transcriptCard">
+            <div class="card-header">
+              <div class="transcript-tabs">
+                <button class="tab-btn active" data-tab="segments">📝 Segmentos con Timestamps</button>
+                <button class="tab-btn" data-tab="rawjson">📄 JSON sin procesar</button>
+              </div>
+              <div class="transcript-header-actions" id="segmentsActions">
+                <button id="btnAddSegment" class="btn btn-sm btn-outline">+ Agregar Segmento</button>
+              </div>
+            </div>
+
+            <!-- Tab: Segments -->
+            <div id="tabSegments" class="tab-content active">
+              <div id="segmentsList" class="segments-list">
+                <div class="no-transcript-msg">
+                  Esta llamada aún no ha sido transcrita.<br>
+                  Haz clic en <strong>✨ Transcribir con Gemini</strong> para generar la transcripción automática con identificación de interlocutores y marcas de tiempo.
+                </div>
+              </div>
+            </div>
+
+            <!-- Tab: Raw JSON -->
+            <div id="tabRawJson" class="tab-content" style="display: none;">
+              <textarea id="rawJsonTextarea" class="raw-json-textarea" spellcheck="false"></textarea>
+              <div class="raw-json-actions">
+                <button id="btnApplyRawJson" class="btn btn-sm btn-primary">Aplicar cambios desde JSON</button>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </main>
+    </div>
+  </div>
+
+  <!-- Settings Modal -->
+  <div class="modal-overlay" id="configModal" style="display: none;">
+    <div class="modal-card">
+      <div class="modal-header">
+        <h3>Ajustes de Gemini API</h3>
+        <button id="btnCloseConfigModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="form-group">
+          <label for="inputApiKey">Clave de API de Gemini (API Key):</label>
+          <div class="api-key-input-wrapper">
+            <input type="password" id="inputApiKey" placeholder="AIzaSy..." />
+            <button type="button" id="btnToggleApiKey" class="btn-icon">👁️</button>
+          </div>
+          <small class="form-help">
+            Puedes obtener tu clave gratis en <a href="https://aistudio.google.com/app/apikey" target="_blank">Google AI Studio</a>.
+            Se guardará de forma segura en tu equipo local (<code>~/.call_recorder_config.json</code>).
+          </small>
+        </div>
+        <div class="form-group">
+          <label for="defaultModelSelect">Modelo Gemini por Defecto:</label>
+          <select id="defaultModelSelect">
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado)</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label>Carpeta de grabaciones:</label>
+          <div class="path-display" id="displayRecordingsPath">~/Recordings</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelConfig" class="btn btn-secondary">Cancelar</button>
+        <button id="btnSaveConfig" class="btn btn-primary">Guardar Ajustes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Toast Notification -->
+  <div id="toast" class="toast"></div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
