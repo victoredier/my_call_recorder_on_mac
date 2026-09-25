@@ -73,7 +73,7 @@ class CallRecorderApp(rumps.App):
       rumps.alert("Error de Grabación", f"No se pudo iniciar el micrófono: {error_msg}")
 
   def on_stop(self, _):
-    """Stops audio recording, calculates duration and prompts for meeting name."""
+    """Stops audio recording and finalizes meeting metadata without prompting."""
     if not self.recorder.is_recording:
       return
 
@@ -83,33 +83,14 @@ class CallRecorderApp(rumps.App):
       self.pause_button.title = "Pausar Grabación"
 
       meeting_dir = self.current_meeting["meeting_dir"]
-      meeting_id = self.current_meeting["id"]
-      default_name = self.current_meeting.get("name", "Llamada")
-
-      # Prompt user for meeting name via native macOS dialog
-      try:
-        window = rumps.Window(
-            message="Introduce un nombre para identificar esta reunión:",
-            title="Llamada Finalizada",
-            default_text=default_name,
-            ok="Guardar",
-            cancel="Omitir",
-            dimensions=(320, 24)
-        )
-        response = window.run()
-        if response.clicked and response.text.strip():
-          final_name = response.text.strip()
-        else:
-          final_name = default_name
-      except Exception:
-        final_name = default_name
+      meeting_name = self.current_meeting.get("name", "Llamada")
 
       # Finalize metadata with duration and name
-      self.storage.finalize_recording(meeting_dir, name=final_name)
+      self.storage.finalize_recording(meeting_dir, name=meeting_name)
       rumps.notification(
           "Call Recorder",
           "Grabación Guardada",
-          f"Reunión: {final_name}\nAbre el Dashboard para ver o transcribir."
+          f"Reunión: {meeting_name}\nAbre el Dashboard para ver o transcribir."
       )
       self.current_meeting = None
 

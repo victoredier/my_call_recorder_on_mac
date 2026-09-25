@@ -384,6 +384,13 @@ function setupEventListeners() {
   });
 
   // Save Meeting Name
+  meetingNameInput.addEventListener("keydown", (e) => {
+    if (e.key === "Enter") {
+      e.preventDefault();
+      btnSaveName.click();
+    }
+  });
+
   btnSaveName.addEventListener("click", async () => {
     if (!selectedMeeting) return;
     const newName = meetingNameInput.value.trim();

@@ -8,7 +8,7 @@ Aplicación de barra de menú para macOS que graba llamadas y reuniones con audi
 
 - **Menú en la Barra de Tareas (Menu Bar):**
   - Iniciar, Pausar, Reanudar y Detener grabación.
-  - Al detener la llamada, solicita el nombre de la reunión mediante un diálogo nativo de macOS.
+  - Al detener la llamada, finaliza inmediatamente sin diálogos ni interrupciones; puedes renombrarla o asignarle un nombre en cualquier momento desde el Dashboard.
   - Acceso directo a **"Abrir Dashboard de Llamadas..."** y **"Abrir Carpeta en Finder"**.
 
 - **Almacenamiento Organizado en Subcarpetas:**
