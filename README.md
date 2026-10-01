@@ -59,9 +59,30 @@ export GEMINI_API_KEY="AIzaSy..."
 O bien ingresarla directamente en la ventana de **Ajustes** del Dashboard web.
 
 ### 3. Ejecutar la aplicación
+
+Tienes varias alternativas según tu preferencia:
+
+#### Opción A: Como aplicación de Mac nativa (Recomendada - Sin terminal)
+Genera la app de macOS ejecutando una sola vez:
+```bash
+./create_app.sh
+```
+Esto creará **`Call Recorder.app`**.
+- Haz doble clic sobre ella en Finder o Spotlight (`Cmd + Espacio`) para iniciar la app.
+- Se ejecuta en segundo plano sin abrir ninguna ventana de terminal.
+- Si gustas, puedes moverla a tu carpeta `/Applications`.
+
+#### Opción B: En segundo plano desde la terminal
+Si deseas lanzarla desde la terminal y poder **cerrar la ventana de inmediato**:
+```bash
+./run.sh -b
+```
+Para detenerla cuando esté corriendo en segundo plano:
+- Puedes hacer clic en `🎙️` en la barra de menú y presionar **"Quit"**, o
+- Ejecutar `./stop.sh` desde la terminal.
+
+#### Opción C: En primer plano (tradicional)
 ```bash
 ./run.sh
-# O directamente:
-python3 main.py
 ```
 Aparecerá el icono `🎙️` en la barra de menú superior de tu Mac.

@@ -1,8 +1,23 @@
 #!/bin/bash
 
+# Background execution support
+if [ "$1" = "--background" ] || [ "$1" = "-b" ]; then
+    nohup "$0" > /dev/null 2>&1 &
+    echo "🚀 Call Recorder iniciado en segundo plano."
+    exit 0
+fi
+
 # Get the directory where the script is located
 SCRIPT_DIR="$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )"
 cd "$SCRIPT_DIR" || exit 1
+
+# Check if Call Recorder is already running
+RUNNING_PID=$(pgrep -f "$SCRIPT_DIR/main.py" | head -n 1)
+if [ -n "$RUNNING_PID" ]; then
+    echo "⚠️  Call Recorder ya está ejecutándose (PID: $RUNNING_PID)."
+    osascript -e 'display notification "Call Recorder ya está activo en la barra de menú." with title "Call Recorder"' 2>/dev/null
+    exit 0
+fi
 
 # Check if the virtual environment exists, if not create it automatically
 if [ ! -d "venv" ]; then
@@ -32,4 +47,4 @@ else
 fi
 
 # Run the application using the virtual environment's python
-exec python3 main.py
+exec "$SCRIPT_DIR/venv/bin/python3" "$SCRIPT_DIR/main.py"
