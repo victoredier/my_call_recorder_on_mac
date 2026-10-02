@@ -4,6 +4,42 @@ import queue
 import threading
 import sys
 
+def check_microphone_permission() -> tuple[bool, str]:
+  """
+  Checks macOS microphone permission via AVFoundation and prompts if undetermined.
+  Returns:
+    (is_authorized: bool, status_message: str)
+  """
+  try:
+    from Foundation import NSBundle
+    import objc
+    av_bundle = NSBundle.bundleWithPath_('/System/Library/Frameworks/AVFoundation.framework')
+    if av_bundle:
+      av_bundle.load()
+      AVCaptureDevice = objc.lookUpClass('AVCaptureDevice')
+      if AVCaptureDevice:
+        status = AVCaptureDevice.authorizationStatusForMediaType_('soun')
+        if status == 0:  # NotDetermined: trigger native macOS permission prompt
+          import threading
+          event = threading.Event()
+          def handler(granted):
+            event.set()
+          AVCaptureDevice.requestAccessForMediaType_completionHandler_('soun', handler)
+          event.wait(timeout=15.0)
+          status = AVCaptureDevice.authorizationStatusForMediaType_('soun')
+        
+        if status == 3:
+          return True, "Authorized"
+        elif status == 2:
+          return False, "Permiso denegado en Ajustes del Sistema."
+        elif status == 1:
+          return False, "Permiso restringido por políticas de macOS."
+        else:
+          return False, "Permiso no concedido."
+  except Exception as e:
+    return True, str(e)
+  return True, "Authorized"
+
 class AudioRecorder:
   """
   Handles audio recording in a separate thread to prevent blocking
@@ -61,6 +97,11 @@ class AudioRecorder:
     if self.is_recording:
       return False
     
+    is_granted, reason = check_microphone_permission()
+    if not is_granted:
+      self.error_message = f"Acceso al micrófono denegado ({reason}). Actívalo en Ajustes del Sistema > Privacidad y Seguridad > Micrófono."
+      return False
+
     self.error_message = None
     self.is_recording = True
     self.is_paused = False

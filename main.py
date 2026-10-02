@@ -4,7 +4,7 @@ import webbrowser
 from datetime import datetime
 import rumps
 
-from audio_recorder import AudioRecorder
+from audio_recorder import AudioRecorder, check_microphone_permission
 from storage_manager import StorageManager
 from server import start_server
 
@@ -28,6 +28,9 @@ class CallRecorderApp(rumps.App):
       print(f"Error starting local dashboard server: {e}")
       self.server = None
     
+    # Check microphone permission on startup so the system prompt appears if needed
+    check_microphone_permission()
+
     # Menu Items
     self.start_button = rumps.MenuItem("Iniciar Grabación", callback=self.on_start)
     self.pause_button = rumps.MenuItem("Pausar Grabación", callback=self.on_pause_toggle)
@@ -70,7 +73,12 @@ class CallRecorderApp(rumps.App):
       rumps.notification("Call Recorder", "Grabación Iniciada", f"Guardando en carpeta: {folder_name}")
     else:
       error_msg = self.recorder.error_message or "Error desconocido."
-      rumps.alert("Error de Grabación", f"No se pudo iniciar el micrófono: {error_msg}")
+      rumps.alert("Error de Grabación", f"No se pudo iniciar el micrófono:\n\n{error_msg}")
+      if "Ajustes del Sistema" in error_msg:
+        try:
+          subprocess.Popen(["open", "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone"])
+        except Exception:
+          pass
 
   def on_stop(self, _):
     """Stops audio recording and finalizes meeting metadata without prompting."""
