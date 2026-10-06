@@ -67,15 +67,21 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
         path = parsed_url.path
 
         # Static assets routing
-        if path == "/" or path == "/index.html":
-            self._serve_static_file("index.html", "text/html")
+        static_files = {
+            "/": ("index.html", "text/html"),
+            "/index.html": ("index.html", "text/html"),
+            "/style.css": ("style.css", "text/css"),
+            "/app.js": ("app.js", "application/javascript"),
+            "/icon.svg": ("icon.svg", "image/svg+xml"),
+            "/favicon.svg": ("favicon.svg", "image/svg+xml"),
+            "/icon.png": ("icon.png", "image/png"),
+            "/favicon.png": ("favicon.png", "image/png"),
+        }
+        if path in static_files:
+            file_name, c_type = static_files[path]
+            self._serve_static_file(file_name, c_type)
             return
-        elif path == "/style.css":
-            self._serve_static_file("style.css", "text/css")
-            return
-        elif path == "/app.js":
-            self._serve_static_file("app.js", "application/javascript")
-            return
+
 
         # API: List all meetings
         if path == "/api/meetings":
@@ -254,7 +260,10 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
             with open(file_path, "rb") as f:
                 content = f.read()
             self.send_response(200)
-            self.send_header("Content-Type", f"{content_type}; charset=utf-8")
+            if content_type.startswith("image/"):
+                self.send_header("Content-Type", content_type)
+            else:
+                self.send_header("Content-Type", f"{content_type}; charset=utf-8")
             self.send_header("Content-Length", str(len(content)))
             self.send_header("Cache-Control", "no-cache")
             self.end_headers()

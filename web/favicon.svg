@@ -1,0 +1,150 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1024 1024" width="1024" height="1024">
+  <defs>
+    <!-- Background Gradients -->
+    <linearGradient id="bgGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#1E2330" />
+      <stop offset="45%" stop-color="#131620" />
+      <stop offset="100%" stop-color="#0A0B10" />
+    </linearGradient>
+
+    <radialGradient id="ambientGlow" cx="50%" cy="40%" r="65%">
+      <stop offset="0%" stop-color="#3B82F6" stop-opacity="0.22" />
+      <stop offset="40%" stop-color="#8B5CF6" stop-opacity="0.14" />
+      <stop offset="100%" stop-color="#000000" stop-opacity="0" />
+    </radialGradient>
+
+    <!-- Top Specular Border -->
+    <linearGradient id="borderGrad" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.28" />
+      <stop offset="30%" stop-color="#FFFFFF" stop-opacity="0.08" />
+      <stop offset="100%" stop-color="#FFFFFF" stop-opacity="0.02" />
+    </linearGradient>
+
+    <!-- Microphone Capsule Gradients -->
+    <linearGradient id="capsuleGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" />
+      <stop offset="60%" stop-color="#E2E8F0" />
+      <stop offset="100%" stop-color="#CBD5E1" />
+    </linearGradient>
+
+    <linearGradient id="capsuleInnerGlow" x1="0%" y1="0%" x2="0%" y2="100%">
+      <stop offset="0%" stop-color="#FFFFFF" stop-opacity="0.9" />
+      <stop offset="100%" stop-color="#94A3B8" stop-opacity="0.1" />
+    </linearGradient>
+
+    <!-- Acoustic Wave Gradients -->
+    <linearGradient id="waveGradInner" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="50%" stop-color="#6366F1" />
+      <stop offset="100%" stop-color="#A855F7" />
+    </linearGradient>
+
+    <linearGradient id="waveGradOuter" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#60A5FA" stop-opacity="0.85" />
+      <stop offset="50%" stop-color="#818CF8" stop-opacity="0.75" />
+      <stop offset="100%" stop-color="#C084FC" stop-opacity="0.85" />
+    </linearGradient>
+
+    <!-- Cradle & Stand Gradient -->
+    <linearGradient id="standGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#38BDF8" />
+      <stop offset="100%" stop-color="#8B5CF6" />
+    </linearGradient>
+
+    <!-- Recording Indicator Dot Gradients -->
+    <radialGradient id="recHalo" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" stop-color="#FF3B30" stop-opacity="0.8" />
+      <stop offset="50%" stop-color="#FF3B30" stop-opacity="0.3" />
+      <stop offset="100%" stop-color="#FF3B30" stop-opacity="0" />
+    </radialGradient>
+
+    <linearGradient id="recGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FF6961" />
+      <stop offset="40%" stop-color="#FF3B30" />
+      <stop offset="100%" stop-color="#C60B00" />
+    </linearGradient>
+
+    <!-- Soft Drop Shadow Filter for Squircle -->
+    <filter id="squircleShadow" x="-10%" y="-10%" width="120%" height="125%">
+      <feDropShadow dx="0" dy="24" stdDeviation="32" flood-color="#000000" flood-opacity="0.55" />
+      <feDropShadow dx="0" dy="8" stdDeviation="12" flood-color="#000000" flood-opacity="0.35" />
+    </filter>
+
+    <!-- Element Glow Filter -->
+    <filter id="neonGlow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="8" result="blur" />
+      <feMerge>
+        <feMergeNode in="blur" />
+        <feMergeNode in="SourceGraphic" />
+      </feMerge>
+    </filter>
+  </defs>
+
+  <!-- 1. Apple macOS Continuous Squircle Base -->
+  <g filter="url(#squircleShadow)">
+    <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#bgGrad)" />
+    <!-- Ambient Radial Light -->
+    <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="url(#ambientGlow)" />
+    <!-- Specular Beveled Inner Border -->
+    <rect x="100" y="100" width="824" height="824" rx="185" ry="185" fill="none" stroke="url(#borderGrad)" stroke-width="3" />
+  </g>
+
+  <!-- 2. Acoustic Dialogue Waves (Left & Right) -->
+  <g filter="url(#neonGlow)">
+    <!-- Outer Waves -->
+    <path d="M 285, 360 C 235, 435 235, 545 285, 620"
+          fill="none" stroke="url(#waveGradOuter)" stroke-width="15" stroke-linecap="round" />
+    <path d="M 739, 360 C 789, 435 789, 545 739, 620"
+          fill="none" stroke="url(#waveGradOuter)" stroke-width="15" stroke-linecap="round" />
+
+    <!-- Inner Waves -->
+    <path d="M 345, 410 C 310, 455 310, 525 345, 570"
+          fill="none" stroke="url(#waveGradInner)" stroke-width="16" stroke-linecap="round" />
+    <path d="M 679, 410 C 714, 455 714, 525 679, 570"
+          fill="none" stroke="url(#waveGradInner)" stroke-width="16" stroke-linecap="round" />
+  </g>
+
+  <!-- 3. Microphone Stand & Cradle -->
+  <g filter="url(#neonGlow)">
+    <!-- Cradle Arc cupping capsule bottom -->
+    <path d="M 405, 480 C 405, 575 450, 608 512, 608 C 574, 608 619, 575 619, 480"
+          fill="none" stroke="url(#standGrad)" stroke-width="18" stroke-linecap="round" />
+    <!-- Vertical Stem -->
+    <line x1="512" y1="608" x2="512" y2="676"
+          stroke="url(#standGrad)" stroke-width="18" stroke-linecap="round" />
+    <!-- Base Foot -->
+    <line x1="436" y1="676" x2="588" y2="676"
+          stroke="url(#standGrad)" stroke-width="18" stroke-linecap="round" />
+  </g>
+
+  <!-- 4. Central Microphone Capsule -->
+  <g>
+    <!-- Soft Drop Shadow under Capsule -->
+    <rect x="444" y="340" width="136" height="236" rx="68" ry="68"
+          fill="#000000" opacity="0.4" />
+    <!-- Main Capsule Body -->
+    <rect x="444" y="336" width="136" height="236" rx="68" ry="68"
+          fill="url(#capsuleGrad)" />
+    <!-- Subtle Inner Highlight Rim -->
+    <rect x="447" y="339" width="130" height="230" rx="65" ry="65"
+          fill="none" stroke="url(#capsuleInnerGlow)" stroke-width="3" />
+    <!-- Minimalist Acoustic Slit / Mesh divider -->
+    <line x1="462" y1="446" x2="562" y2="446"
+          stroke="#94A3B8" stroke-width="4" stroke-linecap="round" opacity="0.6" />
+    <circle cx="512" cy="400" r="5" fill="#94A3B8" opacity="0.5" />
+    <circle cx="490" cy="400" r="4" fill="#94A3B8" opacity="0.4" />
+    <circle cx="534" cy="400" r="4" fill="#94A3B8" opacity="0.4" />
+  </g>
+
+  <!-- 5. Vivid Ruby Recording Indicator Node -->
+  <g>
+    <!-- Ambient Halo Glow -->
+    <circle cx="606" cy="336" r="46" fill="url(#recHalo)" />
+    <!-- Outer Rim -->
+    <circle cx="606" cy="336" r="23" fill="#131620" />
+    <!-- Core Recording Dot -->
+    <circle cx="606" cy="336" r="19" fill="url(#recGrad)" />
+    <!-- Specular Highlight for Gem-like Glass Feel -->
+    <circle cx="601" cy="331" r="5.5" fill="#FFFFFF" opacity="0.85" />
+  </g>
+</svg>

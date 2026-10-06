@@ -8,6 +8,36 @@ from audio_recorder import AudioRecorder, check_microphone_permission
 from storage_manager import StorageManager
 from server import start_server
 
+# Paths to minimalist menu bar icons
+PROJECT_DIR = os.path.abspath(os.path.dirname(__file__))
+
+def _find_asset(name: str) -> str:
+  candidates = [
+      os.path.join(PROJECT_DIR, "assets", name),
+      os.path.join(PROJECT_DIR, "..", "Resources", "assets", name),
+      os.path.join(PROJECT_DIR, "..", "Resources", name),
+      os.path.join(PROJECT_DIR, "Resources", "assets", name),
+  ]
+  for c in candidates:
+    if os.path.exists(c):
+      return os.path.abspath(c)
+  return os.path.join(PROJECT_DIR, "assets", name)
+
+ICON_IDLE = _find_asset("menu_icon.png")
+ICON_RECORDING = _find_asset("menu_icon_recording.png")
+ICON_PAUSED = _find_asset("menu_icon_paused.png")
+
+# Fallback protection if macOS sandbox restricts Application Support
+_orig_app_support = rumps.application_support
+def _safe_app_support(name):
+  try:
+    return _orig_app_support(name)
+  except Exception:
+    fallback = os.path.expanduser("~/.call_recorder")
+    os.makedirs(fallback, exist_ok=True)
+    return fallback
+rumps.application_support = _safe_app_support
+
 class CallRecorderApp(rumps.App):
   """
   macOS Menu Bar application for recording audio calls.
@@ -15,7 +45,12 @@ class CallRecorderApp(rumps.App):
   Includes a local web dashboard for listing, transcribing with Gemini, and editing.
   """
   def __init__(self):
-    super(CallRecorderApp, self).__init__("🎙️")
+    super(CallRecorderApp, self).__init__(
+        name="Call Recorder",
+        title=None,
+        icon=ICON_IDLE if os.path.exists(ICON_IDLE) else "🎙️",
+        template=True if os.path.exists(ICON_IDLE) else None
+    )
     self.recorder = AudioRecorder()
     self.storage = StorageManager()
     self.current_meeting = None
@@ -68,7 +103,10 @@ class CallRecorderApp(rumps.App):
     # Begin the audio recording
     success = self.recorder.start_recording(audio_path)
     if success:
-      self.title = "🔴🎙️"  # Active recording icon
+      if os.path.exists(ICON_RECORDING):
+        self.template = False
+        self.icon = ICON_RECORDING
+      self.title = " 🔴"
       self.pause_button.title = "Pausar Grabación"
       rumps.notification("Call Recorder", "Grabación Iniciada", f"Guardando en carpeta: {folder_name}")
     else:
@@ -87,7 +125,10 @@ class CallRecorderApp(rumps.App):
 
     success = self.recorder.stop_recording()
     if success and self.current_meeting:
-      self.title = "🎙️"  # Reset icon
+      self.title = None
+      if os.path.exists(ICON_IDLE):
+        self.template = True
+        self.icon = ICON_IDLE
       self.pause_button.title = "Pausar Grabación"
 
       meeting_dir = self.current_meeting["meeting_dir"]
@@ -110,11 +151,17 @@ class CallRecorderApp(rumps.App):
     if self.recorder.is_paused:
       if self.recorder.resume_recording():
         sender.title = "Pausar Grabación"
-        self.title = "🔴🎙️"  # Active
+        if os.path.exists(ICON_RECORDING):
+          self.template = False
+          self.icon = ICON_RECORDING
+        self.title = " 🔴"
     else:
       if self.recorder.pause_recording():
         sender.title = "Reanudar Grabación"
-        self.title = "⏸️🎙️"  # Paused
+        if os.path.exists(ICON_PAUSED):
+          self.template = False
+          self.icon = ICON_PAUSED
+        self.title = " ⏸️"
 
   def open_dashboard(self, _):
     """Opens the web dashboard in the default browser."""

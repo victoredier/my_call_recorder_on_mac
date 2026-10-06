@@ -13,6 +13,7 @@ const btnOpenFinder = document.getElementById("btnOpenFinder");
 const btnConfigModal = document.getElementById("btnConfigModal");
 const apiKeyBadge = document.getElementById("apiKeyBadge");
 
+const contentPanel = document.getElementById("contentPanel");
 const emptyState = document.getElementById("emptyState");
 const meetingDetail = document.getElementById("meetingDetail");
 const meetingNameInput = document.getElementById("meetingNameInput");
@@ -25,6 +26,11 @@ const metaDuration = document.getElementById("metaDuration");
 const metaStatus = document.getElementById("metaStatus");
 const metaFolder = document.getElementById("metaFolder");
 
+const audioCard = document.getElementById("audioCard");
+const audioCardSentinel = document.getElementById("audioCardSentinel");
+const audioFloatingTitle = document.getElementById("audioFloatingTitle");
+const audioStatusBadge = document.getElementById("audioStatusBadge");
+const btnScrollToTop = document.getElementById("btnScrollToTop");
 const audioPlayer = document.getElementById("audioPlayer");
 const speedButtons = document.querySelectorAll(".btn-speed");
 
@@ -64,6 +70,7 @@ document.addEventListener("DOMContentLoaded", () => {
   loadConfig();
   loadMeetings();
   setupEventListeners();
+  setupFloatingPlayer();
 });
 
 function showToast(message, duration = 3000) {
@@ -187,6 +194,13 @@ async function selectMeetingById(meetingId) {
     if (!res.ok) throw new Error("Reunión no encontrada");
     selectedMeeting = await res.json();
     currentTranscript = selectedMeeting.transcript || null;
+    if (contentPanel) {
+      contentPanel.scrollTo({ top: 0, behavior: "auto" });
+    }
+    if (audioCard) {
+      audioCard.classList.remove("is-floating");
+      audioCard.classList.remove("is-playing");
+    }
     renderMeetingDetail();
     renderMeetingsList(); // To update active highlight
   } catch (err) {
@@ -205,7 +219,12 @@ function renderMeetingDetail() {
   meetingDetail.style.display = "flex";
 
   // Title & Metadata
+  const displayName = selectedMeeting.name || selectedMeeting.folder_name || selectedMeeting.id;
   meetingNameInput.value = selectedMeeting.name || "";
+  if (audioFloatingTitle) {
+    audioFloatingTitle.textContent = displayName;
+    audioFloatingTitle.title = displayName;
+  }
   metaDate.textContent = `📅 ${formatDate(selectedMeeting.created_at)}`;
   metaDuration.textContent = `⏱️ ${formatDuration(selectedMeeting.duration_seconds || 0)}`;
   metaFolder.textContent = `📁 ${selectedMeeting.folder_name || selectedMeeting.id}`;
@@ -228,10 +247,20 @@ function renderMeetingDetail() {
   // Audio setup
   if (selectedMeeting.has_audio) {
     audioPlayer.src = `/api/meetings/${selectedMeeting.id}/audio`;
+    if (audioCard) audioCard.style.display = "flex";
     audioPlayer.style.display = "block";
   } else {
     audioPlayer.src = "";
+    if (audioCard) audioCard.style.display = "none";
     audioPlayer.style.display = "none";
+  }
+
+  if (audioStatusBadge) {
+    audioStatusBadge.textContent = "⏸️ PAUSADO";
+    audioStatusBadge.className = "audio-floating-indicator paused";
+  }
+  if (audioCard) {
+    audioCard.classList.remove("is-playing");
   }
 
   hideStatusBanner();
@@ -407,6 +436,10 @@ function setupEventListeners() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Error al renombrar");
       selectedMeeting.name = newName;
+      if (audioFloatingTitle) {
+        audioFloatingTitle.textContent = newName;
+        audioFloatingTitle.title = newName;
+      }
       showToast("Nombre actualizado");
       loadMeetings(selectedMeeting.id);
     } catch (err) {
@@ -699,4 +732,136 @@ function escapeHtml(text) {
   const div = document.createElement("div");
   div.textContent = text;
   return div.innerHTML;
+}
+
+// --- Floating Audio Player & Playback Shortcuts ---
+function setupFloatingPlayer() {
+  if (!audioCard || !contentPanel) return;
+
+  function updateFloatingState() {
+    if (!audioCardSentinel) return;
+    const sentinelRect = audioCardSentinel.getBoundingClientRect();
+    const panelRect = contentPanel.getBoundingClientRect();
+    // When sentinel scrolls out above the visible top edge of contentPanel
+    const isFloating = sentinelRect.bottom <= panelRect.top + 2;
+    if (isFloating) {
+      audioCard.classList.add("is-floating");
+    } else {
+      audioCard.classList.remove("is-floating");
+    }
+  }
+
+  // Scroll listener on content panel
+  contentPanel.addEventListener("scroll", updateFloatingState, { passive: true });
+
+  // IntersectionObserver for efficient and instant viewport detection
+  if ("IntersectionObserver" in window && audioCardSentinel) {
+    const observer = new IntersectionObserver((entries) => {
+      entries.forEach(entry => {
+        if (!entry.isIntersecting && entry.boundingClientRect.top < entry.rootBounds.top) {
+          audioCard.classList.add("is-floating");
+        } else if (entry.isIntersecting) {
+          audioCard.classList.remove("is-floating");
+        }
+      });
+    }, {
+      root: contentPanel,
+      threshold: [0, 1]
+    });
+    observer.observe(audioCardSentinel);
+  }
+
+  // Scroll to top button
+  if (btnScrollToTop) {
+    btnScrollToTop.addEventListener("click", () => {
+      contentPanel.scrollTo({ top: 0, behavior: "smooth" });
+    });
+  }
+
+  // Audio status and playback events
+  if (audioPlayer) {
+    audioPlayer.addEventListener("play", () => {
+      audioCard.classList.add("is-playing");
+      if (audioStatusBadge) {
+        audioStatusBadge.textContent = "● REPRODUCIENDO";
+        audioStatusBadge.className = "audio-floating-indicator playing";
+      }
+    });
+
+    audioPlayer.addEventListener("pause", () => {
+      audioCard.classList.remove("is-playing");
+      if (audioStatusBadge) {
+        audioStatusBadge.textContent = "⏸️ PAUSADO";
+        audioStatusBadge.className = "audio-floating-indicator paused";
+      }
+    });
+
+    audioPlayer.addEventListener("ended", () => {
+      audioCard.classList.remove("is-playing");
+      if (audioStatusBadge) {
+        audioStatusBadge.textContent = "⏹️ FINALIZADO";
+        audioStatusBadge.className = "audio-floating-indicator ended";
+      }
+      clearActiveSegmentHighlights();
+    });
+
+    // Synchronize active transcript segment highlight while audio plays
+    audioPlayer.addEventListener("timeupdate", () => {
+      highlightActiveSegment(audioPlayer.currentTime);
+    });
+  }
+
+  // Global keyboard shortcuts to pause/resume playback
+  document.addEventListener("keydown", (e) => {
+    if (!audioPlayer || !audioPlayer.src || audioPlayer.style.display === "none") return;
+
+    // Alt+Space or Ctrl+Space: Works anywhere, even while editing text in inputs/textareas
+    if ((e.altKey || e.ctrlKey) && (e.code === "Space" || e.key === " " || e.keyCode === 32)) {
+      e.preventDefault();
+      if (audioPlayer.paused) {
+        audioPlayer.play();
+      } else {
+        audioPlayer.pause();
+      }
+      return;
+    }
+
+    // Space key: Only triggers when NOT actively editing text
+    if (e.code === "Space" || e.key === " " || e.keyCode === 32) {
+      const active = document.activeElement;
+      const tag = active ? active.tagName : "";
+      const isEditable = active && (tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || active.isContentEditable);
+      if (!isEditable) {
+        e.preventDefault();
+        if (audioPlayer.paused) {
+          audioPlayer.play();
+        } else {
+          audioPlayer.pause();
+        }
+      }
+    }
+  });
+}
+
+function clearActiveSegmentHighlights() {
+  const activeItems = segmentsListEl.querySelectorAll(".segment-item.active-playing");
+  activeItems.forEach(el => el.classList.remove("active-playing"));
+}
+
+function highlightActiveSegment(currentTime) {
+  if (!currentTranscript || !currentTranscript.segments) return;
+  const segments = currentTranscript.segments;
+  const segmentItems = segmentsListEl.querySelectorAll(".segment-item");
+  if (segmentItems.length === 0) return;
+
+  segmentItems.forEach((item, idx) => {
+    const seg = segments[idx];
+    if (seg && seg.start_seconds !== undefined && seg.end_seconds !== undefined) {
+      if (currentTime >= seg.start_seconds && currentTime <= seg.end_seconds) {
+        item.classList.add("active-playing");
+      } else {
+        item.classList.remove("active-playing");
+      }
+    }
+  });
 }

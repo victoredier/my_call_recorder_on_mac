@@ -57,6 +57,8 @@ cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
     <string>APPL</string>
     <key>CFBundleShortVersionString</key>
     <string>1.0</string>
+    <key>CFBundleIconFile</key>
+    <string>AppIcon</string>
     <key>LSMinimumSystemVersion</key>
     <string>10.13</string>
     <key>LSUIElement</key>
@@ -68,6 +70,14 @@ cat << 'EOF' > "$CONTENTS_DIR/Info.plist"
 </dict>
 </plist>
 EOF
+
+# Copy AppIcon.icns and assets to Resources
+if [ -f "$SCRIPT_DIR/assets/AppIcon.icns" ]; then
+    cp "$SCRIPT_DIR/assets/AppIcon.icns" "$RESOURCES_DIR/AppIcon.icns"
+fi
+if [ -d "$SCRIPT_DIR/assets" ]; then
+    cp -r "$SCRIPT_DIR/assets" "$RESOURCES_DIR/"
+fi
 
 # 2. Compile native launcher executable
 echo "⚙️  Compilando lanzador nativo..."

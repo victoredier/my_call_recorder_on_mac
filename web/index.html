@@ -4,6 +4,8 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Call Recorder & Transcriber</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <link rel="alternate icon" type="image/png" href="/favicon.png">
   <link rel="stylesheet" href="/style.css">
 </head>
 <body>
@@ -11,7 +13,9 @@
     <!-- Header -->
     <header class="app-header">
       <div class="header-brand">
-        <span class="app-icon">🎙️</span>
+        <div class="brand-logo-container">
+          <img src="/icon.svg" alt="Call Recorder Logo" class="brand-logo-img" />
+        </div>
         <div>
           <h1>Call Recorder</h1>
           <span class="subtitle">Grabaciones y Transcripción Inteligente</span>
@@ -78,15 +82,28 @@
           </div>
 
           <!-- Audio Player Card -->
-          <div class="card audio-card">
-            <audio id="audioPlayer" preload="metadata" controls></audio>
-            <div class="playback-controls">
-              <span class="speed-label">Velocidad:</span>
-              <div class="speed-buttons">
-                <button class="btn-speed active" data-speed="1.0">1.0x</button>
-                <button class="btn-speed" data-speed="1.25">1.25x</button>
-                <button class="btn-speed" data-speed="1.5">1.5x</button>
-                <button class="btn-speed" data-speed="2.0">2.0x</button>
+          <div id="audioCardSentinel" class="audio-sentinel"></div>
+          <div class="card audio-card" id="audioCard">
+            <div class="audio-floating-header" id="audioFloatingHeader">
+              <div class="audio-floating-info">
+                <span class="audio-floating-indicator paused" id="audioStatusBadge">⏸️ PAUSADO</span>
+                <span class="audio-floating-title" id="audioFloatingTitle">-</span>
+              </div>
+              <div class="audio-floating-actions">
+                <span class="audio-floating-hint" title="Atajo para pausar mientras editas transcripciones">⌨️ Espacio / Alt+Espacio: Pausar</span>
+                <button type="button" id="btnScrollToTop" class="btn-scroll-top" title="Volver al inicio de la llamada">⬆️ Arriba</button>
+              </div>
+            </div>
+            <div class="audio-controls-row">
+              <audio id="audioPlayer" preload="metadata" controls></audio>
+              <div class="playback-controls">
+                <span class="speed-label">Velocidad:</span>
+                <div class="speed-buttons">
+                  <button type="button" class="btn-speed active" data-speed="1.0">1.0x</button>
+                  <button type="button" class="btn-speed" data-speed="1.25">1.25x</button>
+                  <button type="button" class="btn-speed" data-speed="1.5">1.5x</button>
+                  <button type="button" class="btn-speed" data-speed="2.0">2.0x</button>
+                </div>
               </div>
             </div>
           </div>
