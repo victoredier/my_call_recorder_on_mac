@@ -61,24 +61,29 @@ class GeminiTranscriber:
     Outputs structured JSON with timestamps and speaker identifiers.
     """
 
-    DEFAULT_PROMPT = """Eres un transcriptor profesional de audio de alta precisión.
-Por favor transcribe el audio completo en su idioma original (ej. español).
-Realiza diarización de interlocutores: identifica a cada participante distinto y asígnale una etiqueta consistente como "Speaker 1", "Speaker 2", etc.
-Indica las marcas de tiempo exactas (timestamps) de inicio y fin para cada intervención.
-Importante para audios extensos: Agrupa las oraciones consecutivas de un mismo interlocutor en turnos de habla naturales y completos (ej. de 5 a 30 segundos) en lugar de crear un segmento por cada palabra o pausa breve.
+    DEFAULT_PROMPT = """Eres un transcriptor profesional de reuniones y llamadas de alta precisión.
+Transcribe el audio completo en su idioma original (ej. español) con diarización de interlocutores (ej. "Speaker 1", "Speaker 2", etc.).
+
+REGLAS CRÍTICAS DE SEGMENTACIÓN Y CONCISIÓN:
+1. NO dividas el audio en micro-segmentos de 1 o 2 segundos ni por palabras sueltas.
+2. Agrupa las frases continuas de un mismo interlocutor en turnos de habla naturales y completos (típicamente de 10 a 45 segundos, o párrafos enteros de conversación). Solo cambia de segmento cuando hable otra persona o haya un cambio de tema con silencio prolongado.
+3. Para mantener la respuesta ágil y completa en audios largos, NO incluyas campos redundantes de segundos o IDs; solo especifica speaker, start_time (HH:MM:SS), end_time (HH:MM:SS) y text.
 
 Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructura exacta:
 {
   "speakers": ["Speaker 1", "Speaker 2"],
   "segments": [
     {
-      "id": 1,
       "speaker": "Speaker 1",
-      "start_time": "00:00:01",
-      "end_time": "00:00:05",
-      "start_seconds": 1.0,
-      "end_seconds": 5.0,
-      "text": "Texto transcrito aquí..."
+      "start_time": "00:00:00",
+      "end_time": "00:00:28",
+      "text": "Párrafo completo con las oraciones que dijo este participante durante su intervención..."
+    },
+    {
+      "speaker": "Speaker 2",
+      "start_time": "00:00:29",
+      "end_time": "00:01:05",
+      "text": "Respuesta completa del segundo participante..."
     }
   ]
 }
@@ -299,6 +304,15 @@ No incluyas texto explicativo antes ni después del JSON.
                     }
                 ]
 
+            # Determine maxOutputTokens according to model capabilities
+            model_name = (self.model or "").lower()
+            if "2.5" in model_name or "2.0" in model_name:
+                max_tokens = 65536
+            elif "1.5" in model_name:
+                max_tokens = 8192
+            else:
+                max_tokens = 32768
+
             # Request generation with JSON schema configuration
             gen_url = f"https://generativelanguage.googleapis.com/v1beta/models/{self.model}:generateContent?key={self.api_key}"
             payload = {
@@ -309,7 +323,8 @@ No incluyas texto explicativo antes ni después del JSON.
                 ],
                 "generationConfig": {
                     "response_mime_type": "application/json",
-                    "temperature": 0.2
+                    "temperature": 0.2,
+                    "maxOutputTokens": max_tokens
                 }
             }
 
@@ -343,10 +358,14 @@ No incluyas texto explicativo antes ni después del JSON.
                 raise ValueError("Gemini no devolvió ninguna transcripción.")
 
             candidate = candidates[0]
+            finish_reason = candidate.get("finishReason")
             parts_resp = candidate.get("content", {}).get("parts", [])
             raw_text = "".join(p.get("text", "") for p in parts_resp)
 
             parsed_json = self.parse_and_validate_transcript(raw_text)
+            if finish_reason == "MAX_TOKENS" and not parsed_json.get("warning"):
+                parsed_json["is_partial"] = True
+                parsed_json["warning"] = "La transcripción alcanzó el límite máximo de tokens y se preservó hasta el último segmento completo."
             return parsed_json
 
         finally:
@@ -359,9 +378,69 @@ No incluyas texto explicativo antes ni después del JSON.
                 self._delete_file_gemini(file_name_to_cleanup)
 
     @classmethod
+    def repair_truncated_json(cls, text: str) -> Dict[str, Any]:
+        """
+        Attempts to repair a JSON string that was truncated by max output token limits.
+        Salvages all complete segments so transcription data is not lost.
+        """
+        clean = text.strip()
+        if clean.startswith("```"):
+            clean = re.sub(r"^```(?:json)?\s*", "", clean)
+            clean = re.sub(r"\s*```$", "", clean).strip()
+
+        try:
+            return json.loads(clean)
+        except Exception:
+            pass
+
+        # Strategy 1: Find the last complete segment closing brace "}"
+        last_brace_idx = clean.rfind("}")
+        while last_brace_idx > 0:
+            candidate = clean[:last_brace_idx + 1].strip()
+            if candidate.endswith(","):
+                candidate = candidate[:-1].strip()
+            if not candidate.endswith("]"):
+                candidate += "\n  ]"
+            if not candidate.endswith("}"):
+                candidate += "\n}"
+            try:
+                parsed = json.loads(candidate)
+                if isinstance(parsed, dict) and "segments" in parsed and isinstance(parsed["segments"], list):
+                    return parsed
+            except Exception:
+                pass
+            last_brace_idx = clean.rfind("}", 0, last_brace_idx)
+
+        # Strategy 2: Regex extraction of individual valid segments
+        segment_pattern = re.compile(r"\{[^{}]*\"(?:speaker|text)\"[^{}]*\}", re.DOTALL)
+        recovered_segments = []
+        for match in segment_pattern.finditer(clean):
+            try:
+                seg = json.loads(match.group(0))
+                if isinstance(seg, dict) and ("speaker" in seg or "text" in seg):
+                    recovered_segments.append(seg)
+            except Exception:
+                continue
+
+        if recovered_segments:
+            speakers = []
+            spk_match = re.search(r"\"speakers\"\s*:\s*\[(.*?)\]", clean, re.DOTALL)
+            if spk_match:
+                try:
+                    speakers = json.loads(f"[{spk_match.group(1)}]")
+                except Exception:
+                    pass
+            return {"speakers": speakers, "segments": recovered_segments}
+
+        raise ValueError(
+            f"La respuesta de Gemini fue interrumpida y no contiene JSON válido ni segmentos recuperables.\n"
+            f"Muestra recibida: {clean[:200]}"
+        )
+
+    @classmethod
     def parse_and_validate_transcript(cls, raw_text: str) -> Dict[str, Any]:
         """
-        Parses JSON text (handling potential markdown fences) and validates the structure.
+        Parses JSON text (handling potential markdown fences and truncated outputs) and validates the structure.
         """
         clean_text = raw_text.strip()
         # Remove ```json ... ``` fences if present
@@ -370,10 +449,12 @@ No incluyas texto explicativo antes ni después del JSON.
             clean_text = re.sub(r"\s*```$", "", clean_text)
         clean_text = clean_text.strip()
 
+        is_repaired = False
         try:
             data = json.loads(clean_text)
-        except json.JSONDecodeError as e:
-            raise ValueError(f"Respuesta de Gemini no contiene JSON válido: {e}\nRespuesta recibida: {raw_text[:300]}")
+        except json.JSONDecodeError:
+            data = cls.repair_truncated_json(clean_text)
+            is_repaired = True
 
         # Ensure segments is a list
         segments = data.get("segments", [])
@@ -433,11 +514,15 @@ No incluyas texto explicativo antes ni después del JSON.
             if spk not in speaker_mapping:
                 speaker_mapping[spk] = spk
 
-        return {
+        result = {
             "speakers": all_speakers,
             "speaker_mapping": speaker_mapping,
             "segments": normalized_segments
         }
+        if is_repaired:
+            result["is_partial"] = True
+            result["warning"] = "La transcripción fue recortada por longitud máxima, pero se recuperaron con éxito todos los segmentos generados."
+        return result
 
     @staticmethod
     def format_seconds(seconds: float) -> str:

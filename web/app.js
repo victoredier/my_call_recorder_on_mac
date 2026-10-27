@@ -509,7 +509,11 @@ function setupEventListeners() {
 
       selectedMeeting = data.meeting;
       currentTranscript = selectedMeeting.transcript;
-      showToast("¡Transcripción completada con éxito!");
+      if (data.warning) {
+        showToast(`⚠️ ${data.warning}`, 6000);
+      } else {
+        showToast("¡Transcripción completada con éxito!");
+      }
       hideStatusBanner();
       renderMeetingDetail();
       loadMeetings(selectedMeeting.id);

@@ -223,7 +223,11 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
 
                 self.storage_manager.save_transcript(meeting_id, transcript_result)
                 updated_meeting = self.storage_manager.get_meeting(meeting_id)
-                self._send_json({"success": True, "meeting": updated_meeting})
+                self._send_json({
+                    "success": True,
+                    "meeting": updated_meeting,
+                    "warning": transcript_result.get("warning")
+                })
             except Exception as e:
                 err_str = str(e)
                 if "<urlopen error" in err_str:

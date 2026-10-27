@@ -63,6 +63,68 @@ class TestGeminiParser(unittest.TestCase):
         self.assertEqual(GeminiTranscriber.parse_time_to_seconds("02:05"), 125.0)
         self.assertEqual(GeminiTranscriber.parse_time_to_seconds("01:01:05"), 3665.0)
 
+    def test_truncated_json_recovery_user_case(self):
+        # Exact pattern reported by the user where JSON cuts off abruptly
+        truncated_raw = '{ "speakers": [ "Speaker 1", "Speaker 2" ], "segments": [ { "id": 1, "speaker": "Speaker 1", "start_time": "00:00:00", "end_time": "00:00:01", "start_seconds": 0.0, "end_seconds": 1.0, "text": "es quads." }, { "id": 2, '
+        result = GeminiTranscriber.parse_and_validate_transcript(truncated_raw)
+        self.assertEqual(len(result["segments"]), 1)
+        self.assertEqual(result["segments"][0]["text"], "es quads.")
+        self.assertEqual(result["segments"][0]["speaker"], "Speaker 1")
+        self.assertTrue(result.get("is_partial"))
+
+    def test_truncated_json_inside_string(self):
+        truncated_raw = """
+        {
+          "speakers": ["Speaker 1"],
+          "segments": [
+            {
+              "speaker": "Speaker 1",
+              "start_time": "00:00:00",
+              "end_time": "00:00:10",
+              "text": "Segmento completo 1"
+            },
+            {
+              "speaker": "Speaker 1",
+              "start_time": "00:00:11",
+              "end_time": "00:00:20",
+              "text": "Este texto fue cortado a la mi
+        """
+        result = GeminiTranscriber.parse_and_validate_transcript(truncated_raw)
+        self.assertEqual(len(result["segments"]), 1)
+        self.assertEqual(result["segments"][0]["text"], "Segmento completo 1")
+        self.assertTrue(result.get("is_partial"))
+
+    def test_compact_format_parsing(self):
+        # New compact prompt format without redundant id and start_seconds
+        compact_raw = """
+        {
+          "speakers": ["Speaker 1", "Speaker 2"],
+          "segments": [
+            {
+              "speaker": "Speaker 1",
+              "start_time": "00:00:00",
+              "end_time": "00:00:25",
+              "text": "Primer párrafo de intervención larga."
+            },
+            {
+              "speaker": "Speaker 2",
+              "start_time": "00:00:26",
+              "end_time": "00:01:10",
+              "text": "Respuesta completa del segundo orador."
+            }
+          ]
+        }
+        """
+        result = GeminiTranscriber.parse_and_validate_transcript(compact_raw)
+        self.assertEqual(len(result["segments"]), 2)
+        # Verify auto-computed fields
+        self.assertEqual(result["segments"][0]["id"], 1)
+        self.assertEqual(result["segments"][0]["start_seconds"], 0.0)
+        self.assertEqual(result["segments"][0]["end_seconds"], 25.0)
+        self.assertEqual(result["segments"][1]["id"], 2)
+        self.assertEqual(result["segments"][1]["start_seconds"], 26.0)
+        self.assertEqual(result["segments"][1]["end_seconds"], 70.0)
+
     def test_audio_optimization(self):
         # Create a stereo 48kHz WAV audio file
         sr = 48000
