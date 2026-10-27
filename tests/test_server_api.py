@@ -139,7 +139,19 @@ class TestServerHandlerDirect(unittest.TestCase):
         self.assertIn("206", status_line)
         self.assertEqual(len(body), 31)
 
-        # 7. DELETE /api/meetings/<id>
+        # 7. GET /api/logs
+        status_line, _, body = self._run_request("GET", "/api/logs")
+        self.assertIn("200", status_line)
+        logs_res = json.loads(body.decode("utf-8"))
+        self.assertIn("logs", logs_res)
+
+        # 8. GET /api/meetings/<id>/logs
+        status_line, _, body = self._run_request("GET", f"/api/meetings/{m['id']}/logs")
+        self.assertIn("200", status_line)
+        meeting_logs_res = json.loads(body.decode("utf-8"))
+        self.assertIn("logs", meeting_logs_res)
+
+        # 9. DELETE /api/meetings/<id>
         status_line, _, body = self._run_request("DELETE", f"/api/meetings/{m['id']}")
         self.assertIn("200", status_line)
         del_res = json.loads(body.decode("utf-8"))

@@ -7,6 +7,7 @@ import rumps
 from audio_recorder import AudioRecorder, check_microphone_permission
 from storage_manager import StorageManager
 from server import start_server
+from error_logger import log_recording_error
 
 # Paths to minimalist menu bar icons
 PROJECT_DIR = os.path.abspath(os.path.dirname(__file__))
@@ -94,6 +95,7 @@ class CallRecorderApp(rumps.App):
     try:
       self.current_meeting = self.storage.create_meeting(name=default_name)
     except Exception as e:
+      log_recording_error(f"No se pudo crear la carpeta de grabación: {e}", exc=e)
       rumps.alert("Error de Almacenamiento", f"No se pudo crear la carpeta de grabación: {e}")
       return
 
@@ -111,6 +113,7 @@ class CallRecorderApp(rumps.App):
       rumps.notification("Call Recorder", "Grabación Iniciada", f"Guardando en carpeta: {folder_name}")
     else:
       error_msg = self.recorder.error_message or "Error desconocido."
+      log_recording_error(f"Fallo al iniciar el micrófono: {error_msg}", meeting_dir=self.current_meeting.get("meeting_dir"))
       rumps.alert("Error de Grabación", f"No se pudo iniciar el micrófono:\n\n{error_msg}")
       if "Ajustes del Sistema" in error_msg:
         try:

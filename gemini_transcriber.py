@@ -9,6 +9,7 @@ import urllib.error
 from typing import Dict, Any, Optional, Tuple
 import soundfile as sf
 import numpy as np
+from error_logger import log_transcription_error, log_transcription_warning
 
 CONFIG_PATH = os.path.expanduser("~/.call_recorder_config.json")
 
@@ -139,6 +140,7 @@ No incluyas texto explicativo antes ni después del JSON.
                 sf.write(temp_path_mp3, data, sr, format='MP3')
                 return temp_path_mp3, "audio/mp3", True, duration_sec
             except Exception as mp3_err:
+                log_transcription_warning(f"MP3 encoding fallback: {mp3_err}. Guardando en WAV mono.", meeting_dir=os.path.dirname(audio_path) if audio_path else None)
                 print(f"MP3 encoding fallback: {mp3_err}. Saving as 16-bit mono WAV.")
 
             # Fallback to 16-bit mono WAV
@@ -147,6 +149,7 @@ No incluyas texto explicativo antes ni después del JSON.
             return temp_path_wav, "audio/wav", True, duration_sec
 
         except Exception as e:
+            log_transcription_warning(f"Audio optimization warning: {e}. Usando audio original.", meeting_dir=os.path.dirname(audio_path) if audio_path else None)
             print(f"Audio optimization warning: {e}. Using original audio.")
             mime_type = "audio/wav"
             if audio_path.lower().endswith(".mp3"):
@@ -178,14 +181,19 @@ No incluyas texto explicativo antes ni después del JSON.
         init_body = json.dumps({"file": {"display_name": display_name}}).encode("utf-8")
 
         req = urllib.request.Request(init_url, data=init_body, headers=init_headers, method="POST")
+        meeting_dir = os.path.dirname(file_path) if file_path else None
         try:
             with urllib.request.urlopen(req, timeout=60) as resp:
                 upload_url = resp.headers.get("x-goog-upload-url") or resp.headers.get("X-Goog-Upload-URL")
         except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
-            raise TimeoutError(f"Tiempo de espera agotado al conectar con el servidor de subida de Gemini: {e}")
+            err_msg = f"Tiempo de espera agotado al conectar con el servidor de subida de Gemini: {e}"
+            log_transcription_error(err_msg, exc=e, meeting_dir=meeting_dir)
+            raise TimeoutError(err_msg)
 
         if not upload_url:
-            raise ValueError("Gemini upload failed: missing upload URL in response.")
+            err_msg = "Gemini upload failed: missing upload URL in response."
+            log_transcription_error(err_msg, meeting_dir=meeting_dir)
+            raise ValueError(err_msg)
 
         # Step 2: Upload file bytes with generous timeout
         upload_timeout = max(180, int(file_size_mb * 5))
@@ -202,17 +210,21 @@ No incluyas texto explicativo antes ni después del JSON.
             with urllib.request.urlopen(upload_req, timeout=upload_timeout) as resp:
                 res_data = json.loads(resp.read().decode("utf-8"))
         except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
-            raise TimeoutError(
+            err_msg = (
                 f"Tiempo de espera agotado al subir el archivo de audio ({file_size_mb:.1f} MB). "
                 "Verifica tu conexión a internet o intenta nuevamente."
             )
+            log_transcription_error(err_msg, exc=e, meeting_dir=meeting_dir)
+            raise TimeoutError(err_msg)
 
         file_obj = res_data.get("file", {})
         file_uri = file_obj.get("uri")
         file_name = file_obj.get("name")  # e.g. "files/xyz123"
 
         if not file_uri:
-            raise ValueError(f"Gemini upload returned invalid file object: {res_data}")
+            err_msg = f"Gemini upload returned invalid file object: {res_data}"
+            log_transcription_error(err_msg, meeting_dir=meeting_dir)
+            raise ValueError(err_msg)
 
         # Check state: wait briefly if PROCESSING
         state = file_obj.get("state")
@@ -230,7 +242,9 @@ No incluyas texto explicativo antes ni después del JSON.
             retries += 1
 
         if state == "FAILED":
-            raise ValueError("El procesamiento del archivo de audio falló en los servidores de Gemini.")
+            err_msg = "El procesamiento del archivo de audio falló en los servidores de Gemini."
+            log_transcription_error(err_msg, meeting_dir=meeting_dir)
+            raise ValueError(err_msg)
 
         return file_uri, file_name
 
@@ -336,26 +350,35 @@ No incluyas texto explicativo antes ni después del JSON.
                 method="POST"
             )
 
+            meeting_dir = os.path.dirname(audio_path) if audio_path else None
             try:
                 with urllib.request.urlopen(req, timeout=generation_timeout) as resp:
                     resp_data = json.loads(resp.read().decode("utf-8"))
             except urllib.error.HTTPError as e:
                 err_body = e.read().decode("utf-8")
-                raise ValueError(f"Error de Gemini API ({e.code}): {err_body}")
+                err_msg = f"Error de Gemini API ({e.code}): {err_body}"
+                log_transcription_error(err_msg, exc=e, meeting_dir=meeting_dir)
+                raise ValueError(err_msg)
             except (urllib.error.URLError, socket.timeout, TimeoutError) as e:
                 err_str = str(e)
                 if "timed out" in err_str.lower() or isinstance(getattr(e, "reason", None), (TimeoutError, socket.timeout)):
                     duration_info = f" (duración: {int(duration_sec // 60)}m)" if duration_sec > 0 else ""
-                    raise TimeoutError(
+                    err_msg = (
                         f"El tiempo de espera para transcribir el audio se agotó tras {generation_timeout} segundos{duration_info}. "
                         "Para llamadas muy largas, asegúrate de utilizar el modelo rápido 'gemini-2.5-flash' o vuelve a intentarlo."
                     )
-                raise ValueError(f"Error de conexión con Gemini API: {getattr(e, 'reason', e)}")
+                    log_transcription_error(err_msg, exc=e, meeting_dir=meeting_dir)
+                    raise TimeoutError(err_msg)
+                err_msg = f"Error de conexión con Gemini API: {getattr(e, 'reason', e)}"
+                log_transcription_error(err_msg, exc=e, meeting_dir=meeting_dir)
+                raise ValueError(err_msg)
 
             # Extract generated content
             candidates = resp_data.get("candidates", [])
             if not candidates:
-                raise ValueError("Gemini no devolvió ninguna transcripción.")
+                err_msg = "Gemini no devolvió ninguna transcripción."
+                log_transcription_error(err_msg, meeting_dir=meeting_dir)
+                raise ValueError(err_msg)
 
             candidate = candidates[0]
             finish_reason = candidate.get("finishReason")
@@ -366,6 +389,10 @@ No incluyas texto explicativo antes ni después del JSON.
             if finish_reason == "MAX_TOKENS" and not parsed_json.get("warning"):
                 parsed_json["is_partial"] = True
                 parsed_json["warning"] = "La transcripción alcanzó el límite máximo de tokens y se preservó hasta el último segmento completo."
+            
+            if parsed_json.get("warning"):
+                log_transcription_warning(parsed_json["warning"], meeting_dir=meeting_dir)
+
             return parsed_json
 
         finally:

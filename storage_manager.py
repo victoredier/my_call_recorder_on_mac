@@ -189,11 +189,13 @@ class StorageManager:
 
             has_transcript = os.path.isfile(transcript_path)
             has_audio = os.path.isfile(os.path.join(entry_path, metadata.get("audio_filename", "audio.wav")))
+            has_error_log = os.path.isfile(os.path.join(entry_path, "error.log"))
             
             meetings.append({
                 **metadata,
                 "has_audio": has_audio,
                 "has_transcript": has_transcript,
+                "has_error_log": has_error_log,
                 "folder_name": entry
             })
 
@@ -226,6 +228,7 @@ class StorageManager:
                 print(f"Error loading transcript: {e}")
 
         audio_path = os.path.join(meeting_dir, metadata.get("audio_filename", "audio.wav"))
+        has_error_log = os.path.isfile(os.path.join(meeting_dir, "error.log"))
         
         return {
             **metadata,
@@ -233,6 +236,7 @@ class StorageManager:
             "meeting_dir": meeting_dir,
             "has_audio": os.path.isfile(audio_path),
             "audio_path": audio_path,
+            "has_error_log": has_error_log,
             "transcript": transcript
         }
 

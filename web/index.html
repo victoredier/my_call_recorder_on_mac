@@ -25,6 +25,9 @@
         <button id="btnOpenFinder" class="btn btn-secondary" title="Abrir carpeta de grabaciones en Finder">
           📂 Abrir en Finder
         </button>
+        <button id="btnLogsModal" class="btn btn-secondary" title="Ver registro de errores de grabación y transcripción">
+          📜 Logs de Errores
+        </button>
         <button id="btnConfigModal" class="btn btn-secondary" title="Configurar API de Gemini">
           <span id="apiKeyBadge" class="status-indicator">●</span>
           ⚙️ Ajustes Gemini
@@ -79,6 +82,7 @@
             <span class="meta-tag" id="metaDuration">⏱️ 00:00</span>
             <span class="meta-tag" id="metaStatus">Grabado</span>
             <span class="meta-tag folder-tag" id="metaFolder" title="Nombre de carpeta">📁 -</span>
+            <span class="meta-tag error-tag" id="metaErrorLog" style="display: none; cursor: pointer;" title="Hacer clic para ver log de error">⚠️ Ver Error</span>
           </div>
 
           <!-- Audio Player Card -->
@@ -226,6 +230,39 @@
       <div class="modal-footer">
         <button id="btnCancelConfig" class="btn btn-secondary">Cancelar</button>
         <button id="btnSaveConfig" class="btn btn-primary">Guardar Ajustes</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Logs Modal -->
+  <div class="modal-overlay" id="logsModal" style="display: none;">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <h3 id="logsModalTitle">📜 Registro de Errores</h3>
+        <button id="btnCloseLogsModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <div class="logs-toolbar">
+          <div class="logs-filter-group">
+            <button class="btn btn-sm btn-filter active" data-filter="all">Todos</button>
+            <button class="btn btn-sm btn-filter" data-filter="RECORDING">🎙️ Grabación</button>
+            <button class="btn btn-sm btn-filter" data-filter="TRANSCRIPTION">✨ Transcripción</button>
+          </div>
+          <div class="logs-actions-group">
+            <button id="btnRefreshLogs" class="btn btn-sm btn-secondary" title="Actualizar logs">🔄 Actualizar</button>
+            <button id="btnCopyLogs" class="btn btn-sm btn-secondary" title="Copiar logs al portapapeles">📋 Copiar</button>
+            <button id="btnClearLogs" class="btn btn-sm btn-secondary text-danger" title="Limpiar logs">🗑️ Limpiar</button>
+          </div>
+        </div>
+        <div class="logs-path-display">
+          <small>Ubicación: <code id="logsPathText">~/Recordings/app_errors.log</code></small>
+        </div>
+        <div class="logs-container" id="logsContainer">
+          <div class="logs-empty">Cargando registro de errores...</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCloseLogs" class="btn btn-secondary">Cerrar</button>
       </div>
     </div>
   </div>

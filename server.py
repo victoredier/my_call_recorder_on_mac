@@ -11,6 +11,7 @@ from socketserver import ThreadingMixIn
 
 from storage_manager import StorageManager
 from gemini_transcriber import GeminiTranscriber, get_saved_config, save_config
+from error_logger import read_logs, clear_logs, log_transcription_error, get_central_log_path
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -125,6 +126,30 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
             self._stream_audio_file(meeting["audio_path"])
             return
 
+        # API: Get general logs /api/logs
+        if path == "/api/logs":
+            logs = read_logs(max_lines=200)
+            self._send_json({
+                "logs": logs,
+                "log_path": get_central_log_path()
+            })
+            return
+
+        # API: Get meeting specific logs /api/meetings/<id>/logs
+        match_meeting_logs = re.match(r"^/api/meetings/([^/]+)/logs$", path)
+        if match_meeting_logs:
+            meeting_id = match_meeting_logs.group(1)
+            meeting = self.storage_manager.get_meeting(meeting_id)
+            if not meeting:
+                self._send_error("Reunión no encontrada", 404)
+                return
+            logs = read_logs(meeting_dir=meeting.get("meeting_dir"), max_lines=200)
+            self._send_json({
+                "meeting_id": meeting_id,
+                "logs": logs
+            })
+            return
+
         self._send_error("Ruta no encontrada", 404)
 
     def do_POST(self):
@@ -232,8 +257,32 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
                 err_str = str(e)
                 if "<urlopen error" in err_str:
                     err_str = re.sub(r"<urlopen error (.*)>", r"\1", err_str)
+                log_transcription_error(
+                    f"Fallo en transcripción ({meeting.get('name', meeting_id)}): {err_str}",
+                    exc=e,
+                    meeting_dir=meeting.get("meeting_dir"),
+                    meeting_id=meeting_id
+                )
                 self.storage_manager.update_status(meeting_id, "error", error_message=err_str)
                 self._send_error(f"Error al transcribir: {err_str}", 500)
+            return
+
+        # API: Clear general logs /api/logs/clear
+        if path == "/api/logs/clear":
+            success = clear_logs()
+            self._send_json({"success": success})
+            return
+
+        # API: Clear meeting logs /api/meetings/<id>/logs/clear
+        match_clear_meeting_logs = re.match(r"^/api/meetings/([^/]+)/logs/clear$", path)
+        if match_clear_meeting_logs:
+            meeting_id = match_clear_meeting_logs.group(1)
+            meeting = self.storage_manager.get_meeting(meeting_id)
+            if not meeting:
+                self._send_error("Reunión no encontrada", 404)
+                return
+            success = clear_logs(meeting_dir=meeting.get("meeting_dir"))
+            self._send_json({"success": success})
             return
 
         self._send_error("Ruta POST no encontrada", 404)

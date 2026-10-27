@@ -1,8 +1,10 @@
+import os
 import sounddevice as sd
 import soundfile as sf
 import queue
 import threading
 import sys
+from error_logger import log_recording_error, log_recording_warning
 
 def check_microphone_permission() -> tuple[bool, str]:
   """
@@ -56,10 +58,12 @@ class AudioRecorder:
     """Called by sounddevice for each block of audio data."""
     if status:
       print(f"Audio callback status: {status}", file=sys.stderr)
+      log_recording_warning(f"Estado en callback de audio sounddevice: {status}")
     self.queue.put(indata.copy())
 
   def _record_loop(self, filepath):
     """The main loop running in the background thread."""
+    meeting_dir = os.path.dirname(filepath) if filepath else None
     try:
       # Retrieve default input device properties
       device_info = sd.query_devices(sd.default.device[0], 'input')
@@ -90,16 +94,19 @@ class AudioRecorder:
     except Exception as e:
       self.error_message = str(e)
       print(f"Recording error: {e}", file=sys.stderr)
+      log_recording_error(f"Error en bucle de grabación de audio ({os.path.basename(filepath)}): {e}", exc=e, meeting_dir=meeting_dir)
       self.is_recording = False
 
   def start_recording(self, filepath):
     """Starts the audio recording process."""
     if self.is_recording:
+      log_recording_warning("Intento de iniciar grabación cuando ya había una grabación activa.")
       return False
     
     is_granted, reason = check_microphone_permission()
     if not is_granted:
       self.error_message = f"Acceso al micrófono denegado ({reason}). Actívalo en Ajustes del Sistema > Privacidad y Seguridad > Micrófono."
+      log_recording_error(self.error_message, meeting_dir=os.path.dirname(filepath) if filepath else None)
       return False
 
     self.error_message = None

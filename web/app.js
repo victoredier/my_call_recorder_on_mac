@@ -244,6 +244,17 @@ function renderMeetingDetail() {
   metaStatus.className = `meta-tag badge ${statusBadgeClass}`;
   metaStatus.textContent = statusText;
 
+  const metaErrorLog = document.getElementById("metaErrorLog");
+  if (metaErrorLog) {
+    if (selectedMeeting.has_error_log || selectedMeeting.status === "error" || selectedMeeting.error_message) {
+      metaErrorLog.style.display = "inline-flex";
+      metaErrorLog.title = selectedMeeting.error_message || "Haz clic para ver el log de error de esta llamada";
+      metaErrorLog.onclick = () => openLogsModal(selectedMeeting.id);
+    } else {
+      metaErrorLog.style.display = "none";
+    }
+  }
+
   // Audio setup
   if (selectedMeeting.has_audio) {
     audioPlayer.src = `/api/meetings/${selectedMeeting.id}/audio`;
@@ -686,6 +697,151 @@ function setupEventListeners() {
       showToast(`Error: ${err.message}`);
     }
   });
+
+  // Logs Modal Event Listeners
+  const btnLogsModal = document.getElementById("btnLogsModal");
+  const btnCloseLogsModal = document.getElementById("btnCloseLogsModal");
+  const btnCloseLogs = document.getElementById("btnCloseLogs");
+  const btnRefreshLogs = document.getElementById("btnRefreshLogs");
+  const btnCopyLogs = document.getElementById("btnCopyLogs");
+  const btnClearLogs = document.getElementById("btnClearLogs");
+
+  if (btnLogsModal) {
+    btnLogsModal.addEventListener("click", () => openLogsModal(null));
+  }
+  if (btnCloseLogsModal) {
+    btnCloseLogsModal.addEventListener("click", () => {
+      document.getElementById("logsModal").style.display = "none";
+    });
+  }
+  if (btnCloseLogs) {
+    btnCloseLogs.addEventListener("click", () => {
+      document.getElementById("logsModal").style.display = "none";
+    });
+  }
+  if (btnRefreshLogs) {
+    btnRefreshLogs.addEventListener("click", () => loadLogs());
+  }
+  if (btnCopyLogs) {
+    btnCopyLogs.addEventListener("click", () => {
+      if (!currentLoadedLogs || currentLoadedLogs.length === 0) {
+        showToast("No hay logs para copiar");
+        return;
+      }
+      const text = currentLoadedLogs.map(l => {
+        let entry = `[${l.timestamp}] [${l.level}] [${l.category}]${l.meeting ? ' [Meeting: ' + l.meeting + ']' : ''} ${l.message}`;
+        if (l.details) entry += `\n${l.details}`;
+        return entry;
+      }).join("\n\n");
+      navigator.clipboard.writeText(text).then(() => {
+        showToast("Logs copiados al portapapeles");
+      }).catch(() => {
+        showToast("No se pudo copiar al portapapeles");
+      });
+    });
+  }
+  if (btnClearLogs) {
+    btnClearLogs.addEventListener("click", async () => {
+      if (!confirm("¿Deseas vaciar este registro de errores?")) return;
+      const url = currentLogsMeetingId ? `/api/meetings/${currentLogsMeetingId}/logs/clear` : "/api/logs/clear";
+      try {
+        const res = await fetch(url, { method: "POST" });
+        if (!res.ok) throw new Error("Error al limpiar logs");
+        showToast("Registro limpiado correctamente");
+        await loadLogs();
+      } catch (e) {
+        showToast(`Error: ${e.message}`);
+      }
+    });
+  }
+
+  // Filter buttons in Logs Modal
+  document.querySelectorAll(".btn-filter").forEach(btn => {
+    btn.addEventListener("click", () => {
+      document.querySelectorAll(".btn-filter").forEach(b => b.classList.remove("active"));
+      btn.classList.add("active");
+      activeLogFilter = btn.dataset.filter || "all";
+      renderLogsList();
+    });
+  });
+}
+
+// Logs State and Logic
+let currentLogsMeetingId = null;
+let currentLoadedLogs = [];
+let activeLogFilter = "all";
+
+async function openLogsModal(meetingId = null) {
+  currentLogsMeetingId = meetingId;
+  const modal = document.getElementById("logsModal");
+  const title = document.getElementById("logsModalTitle");
+  if (modal) modal.style.display = "flex";
+  if (title) {
+    if (meetingId) {
+      title.textContent = `📜 Registro de Errores: ${selectedMeeting?.name || meetingId}`;
+    } else {
+      title.textContent = "📜 Registro de Errores de la Aplicación";
+    }
+  }
+  await loadLogs();
+}
+
+async function loadLogs() {
+  const container = document.getElementById("logsContainer");
+  const pathText = document.getElementById("logsPathText");
+  if (container) container.innerHTML = '<div class="logs-empty">Cargando registros...</div>';
+  
+  const url = currentLogsMeetingId ? `/api/meetings/${currentLogsMeetingId}/logs` : "/api/logs";
+  try {
+    const res = await fetch(url);
+    if (!res.ok) throw new Error("No se pudieron cargar los logs");
+    const data = await res.json();
+    currentLoadedLogs = data.logs || [];
+    if (data.log_path && pathText) {
+      pathText.textContent = data.log_path;
+    } else if (pathText) {
+      pathText.textContent = currentLogsMeetingId ? "error.log (en carpeta de reunión)" : "app_errors.log";
+    }
+    renderLogsList();
+  } catch (err) {
+    if (container) {
+      container.innerHTML = `<div class="logs-empty" style="color: #ef4444;">Error al cargar logs: ${escapeHtml(err.message)}</div>`;
+    }
+  }
+}
+
+function renderLogsList() {
+  const container = document.getElementById("logsContainer");
+  if (!container) return;
+
+  let filtered = currentLoadedLogs;
+  if (activeLogFilter !== "all") {
+    filtered = currentLoadedLogs.filter(l => l.category === activeLogFilter);
+  }
+  if (filtered.length === 0) {
+    container.innerHTML = '<div class="logs-empty">No hay errores ni advertencias registradas en esta categoría.</div>';
+    return;
+  }
+
+  container.innerHTML = filtered.map(log => {
+    const levelClass = (log.level || "info").toLowerCase();
+    const meetingBadge = log.meeting ? `<span class="log-meeting-tag">📁 ${escapeHtml(log.meeting)}</span>` : "";
+    const detailsHtml = log.details ? `<div class="log-details">${escapeHtml(log.details)}</div>` : "";
+    return `
+      <div class="log-entry level-${levelClass}">
+        <div class="log-header">
+          <div class="log-badges">
+            <span class="badge-log badge-level-${levelClass}">${escapeHtml(log.level || "INFO")}</span>
+            <span class="badge-log badge-category">${escapeHtml(log.category || "GENERAL")}</span>
+            ${meetingBadge}
+          </div>
+          <span class="log-timestamp">${escapeHtml(log.timestamp || "")}</span>
+        </div>
+        <div class="log-message">${escapeHtml(log.message || "")}</div>
+        ${detailsHtml}
+      </div>
+    `;
+  }).join("");
 }
 
 function showStatusBanner(msg, type = "info") {
