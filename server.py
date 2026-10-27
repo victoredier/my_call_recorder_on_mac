@@ -226,6 +226,8 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
                 self._send_json({"success": True, "meeting": updated_meeting})
             except Exception as e:
                 err_str = str(e)
+                if "<urlopen error" in err_str:
+                    err_str = re.sub(r"<urlopen error (.*)>", r"\1", err_str)
                 self.storage_manager.update_status(meeting_id, "error", error_message=err_str)
                 self._send_error(f"Error al transcribir: {err_str}", 500)
             return

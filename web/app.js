@@ -496,7 +496,7 @@ function setupEventListeners() {
     const model = selectModel.value;
 
     btnTranscribe.disabled = true;
-    showStatusBanner("✨ Transcribiendo llamada con Gemini... Esto puede tomar unos segundos.", "info");
+    showStatusBanner("✨ Transcribiendo llamada con Gemini... Esto puede tomar desde unos segundos hasta varios minutos en grabaciones extensas. Por favor espera.", "info");
 
     try {
       const res = await fetch(`/api/meetings/${selectedMeeting.id}/transcribe`, {

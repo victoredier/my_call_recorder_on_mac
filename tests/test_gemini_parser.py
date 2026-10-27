@@ -1,4 +1,8 @@
+import os
+import tempfile
 import unittest
+import numpy as np
+import soundfile as sf
 from gemini_transcriber import GeminiTranscriber
 
 class TestGeminiParser(unittest.TestCase):
@@ -58,6 +62,38 @@ class TestGeminiParser(unittest.TestCase):
         self.assertEqual(GeminiTranscriber.format_seconds(3665), "01:01:05")
         self.assertEqual(GeminiTranscriber.parse_time_to_seconds("02:05"), 125.0)
         self.assertEqual(GeminiTranscriber.parse_time_to_seconds("01:01:05"), 3665.0)
+
+    def test_audio_optimization(self):
+        # Create a stereo 48kHz WAV audio file
+        sr = 48000
+        duration = 2.0  # 2 seconds
+        samples = int(sr * duration)
+        stereo_data = np.zeros((samples, 2), dtype=np.float32)
+
+        with tempfile.NamedTemporaryFile(suffix=".wav", delete=False) as f:
+            temp_wav = f.name
+        
+        try:
+            sf.write(temp_wav, stereo_data, sr, subtype="PCM_24")
+            transcriber = GeminiTranscriber(api_key="test_key")
+            opt_path, mime_type, is_temp, dur = transcriber._prepare_optimized_audio(temp_wav)
+
+            self.assertAlmostEqual(dur, 2.0, places=1)
+            self.assertTrue(is_temp)
+            self.assertIn(mime_type, ["audio/mp3", "audio/wav"])
+            self.assertTrue(os.path.exists(opt_path))
+
+            # Verify optimized audio has 1 channel (mono) and <= 16000 sr
+            opt_info = sf.info(opt_path)
+            self.assertEqual(opt_info.channels, 1)
+            self.assertLessEqual(opt_info.samplerate, 16000)
+
+            # Cleanup
+            if is_temp and os.path.exists(opt_path):
+                os.remove(opt_path)
+        finally:
+            if os.path.exists(temp_wav):
+                os.remove(temp_wav)
 
 if __name__ == "__main__":
     unittest.main()
