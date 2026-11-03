@@ -35,6 +35,9 @@ const audioPlayer = document.getElementById("audioPlayer");
 const speedButtons = document.querySelectorAll(".btn-speed");
 
 const btnTranscribe = document.getElementById("btnTranscribe");
+const btnOpenSegmentModal = document.getElementById("btnOpenSegmentModal");
+const btnAudioCardSegment = document.getElementById("btnAudioCardSegment");
+const btnTranscriptHeaderSegment = document.getElementById("btnTranscriptHeaderSegment");
 const selectModel = document.getElementById("selectModel");
 const btnSaveTranscript = document.getElementById("btnSaveTranscript");
 const btnExportJson = document.getElementById("btnExportJson");
@@ -53,6 +56,30 @@ const tabSegments = document.getElementById("tabSegments");
 const tabRawJson = document.getElementById("tabRawJson");
 const rawJsonTextarea = document.getElementById("rawJsonTextarea");
 const btnApplyRawJson = document.getElementById("btnApplyRawJson");
+
+// Segment Modal Elements
+const segmentModal = document.getElementById("segmentModal");
+const btnCloseSegmentModal = document.getElementById("btnCloseSegmentModal");
+const btnCancelSegmentModal = document.getElementById("btnCancelSegmentModal");
+const btnExecuteSegmentTranscribe = document.getElementById("btnExecuteSegmentTranscribe");
+const segmentCallName = document.getElementById("segmentCallName");
+const segmentCallTotalDuration = document.getElementById("segmentCallTotalDuration");
+const inputSegmentStart = document.getElementById("inputSegmentStart");
+const inputSegmentEnd = document.getElementById("inputSegmentEnd");
+const btnSetStartToCurrent = document.getElementById("btnSetStartToCurrent");
+const startCurrentPosBadge = document.getElementById("startCurrentPosBadge");
+const btnSetEndToCurrent = document.getElementById("btnSetEndToCurrent");
+const endCurrentPosBadge = document.getElementById("endCurrentPosBadge");
+const btnSetEndToTotal = document.getElementById("btnSetEndToTotal");
+const segmentCalculatedDuration = document.getElementById("segmentCalculatedDuration");
+const segmentRangeSummary = document.getElementById("segmentRangeSummary");
+const btnPreviewSegmentAudio = document.getElementById("btnPreviewSegmentAudio");
+const btnStopPreviewSegmentAudio = document.getElementById("btnStopPreviewSegmentAudio");
+const segmentModelSelect = document.getElementById("segmentModelSelect");
+const mergeOptionGroup = document.getElementById("mergeOptionGroup");
+
+let isSegmentPreviewActive = false;
+let segmentPreviewEndSec = null;
 
 const configModal = document.getElementById("configModal");
 const btnCloseConfigModal = document.getElementById("btnCloseConfigModal");
@@ -764,6 +791,86 @@ function setupEventListeners() {
       renderLogsList();
     });
   });
+
+  // Segment Modal Trigger Listeners
+  if (btnOpenSegmentModal) {
+    btnOpenSegmentModal.addEventListener("click", () => openSegmentModal());
+  }
+  if (btnAudioCardSegment) {
+    btnAudioCardSegment.addEventListener("click", () => openSegmentModal());
+  }
+  if (btnTranscriptHeaderSegment) {
+    btnTranscriptHeaderSegment.addEventListener("click", () => openSegmentModal());
+  }
+
+  // Segment Modal Controls
+  if (btnCloseSegmentModal) {
+    btnCloseSegmentModal.addEventListener("click", closeSegmentModal);
+  }
+  if (btnCancelSegmentModal) {
+    btnCancelSegmentModal.addEventListener("click", closeSegmentModal);
+  }
+
+  if (btnSetStartToCurrent) {
+    btnSetStartToCurrent.addEventListener("click", () => {
+      const cur = audioPlayer ? Math.floor(audioPlayer.currentTime) : 0;
+      inputSegmentStart.value = formatDuration(cur);
+      updateSegmentDurationCalc();
+    });
+  }
+
+  if (btnSetEndToCurrent) {
+    btnSetEndToCurrent.addEventListener("click", () => {
+      const cur = audioPlayer ? Math.floor(audioPlayer.currentTime) : 0;
+      inputSegmentEnd.value = formatDuration(cur);
+      updateSegmentDurationCalc();
+    });
+  }
+
+  if (btnSetEndToTotal) {
+    btnSetEndToTotal.addEventListener("click", () => {
+      const total = selectedMeeting?.duration_seconds || (audioPlayer ? audioPlayer.duration : 0) || 0;
+      inputSegmentEnd.value = formatDuration(total);
+      updateSegmentDurationCalc();
+    });
+  }
+
+  if (inputSegmentStart) {
+    inputSegmentStart.addEventListener("input", updateSegmentDurationCalc);
+  }
+  if (inputSegmentEnd) {
+    inputSegmentEnd.addEventListener("input", updateSegmentDurationCalc);
+  }
+
+  // Quick adjust buttons (+5s, -5s, +1m, etc.)
+  document.querySelectorAll(".btn-quick-adjust").forEach(btn => {
+    btn.addEventListener("click", () => {
+      const target = btn.dataset.target;
+      const input = target === "start" ? inputSegmentStart : inputSegmentEnd;
+      const totalDuration = selectedMeeting?.duration_seconds || (audioPlayer ? audioPlayer.duration : 0) || 0;
+
+      if (btn.dataset.set !== undefined) {
+        input.value = formatDuration(parseFloat(btn.dataset.set));
+      } else if (btn.dataset.delta !== undefined) {
+        const delta = parseFloat(btn.dataset.delta);
+        let cur = parseTimeString(input.value);
+        cur = Math.max(0, Math.min(totalDuration, cur + delta));
+        input.value = formatDuration(cur);
+      }
+      updateSegmentDurationCalc();
+    });
+  });
+
+  if (btnPreviewSegmentAudio) {
+    btnPreviewSegmentAudio.addEventListener("click", startSegmentPreview);
+  }
+  if (btnStopPreviewSegmentAudio) {
+    btnStopPreviewSegmentAudio.addEventListener("click", stopSegmentPreview);
+  }
+
+  if (btnExecuteSegmentTranscribe) {
+    btnExecuteSegmentTranscribe.addEventListener("click", executeSegmentTranscription);
+  }
 }
 
 // Logs State and Logic
@@ -949,6 +1056,7 @@ function setupFloatingPlayer() {
     });
 
     audioPlayer.addEventListener("pause", () => {
+      if (isSegmentPreviewActive) stopSegmentPreview();
       audioCard.classList.remove("is-playing");
       if (audioStatusBadge) {
         audioStatusBadge.textContent = "⏸️ PAUSADO";
@@ -957,6 +1065,7 @@ function setupFloatingPlayer() {
     });
 
     audioPlayer.addEventListener("ended", () => {
+      if (isSegmentPreviewActive) stopSegmentPreview();
       audioCard.classList.remove("is-playing");
       if (audioStatusBadge) {
         audioStatusBadge.textContent = "⏹️ FINALIZADO";
@@ -968,11 +1077,40 @@ function setupFloatingPlayer() {
     // Synchronize active transcript segment highlight while audio plays
     audioPlayer.addEventListener("timeupdate", () => {
       highlightActiveSegment(audioPlayer.currentTime);
+
+      // Stop audio if segment preview reached its end
+      if (isSegmentPreviewActive && segmentPreviewEndSec !== null) {
+        if (audioPlayer.currentTime >= segmentPreviewEndSec) {
+          stopSegmentPreview();
+        }
+      }
+
+      // Update position badges in segment modal if open
+      if (segmentModal && segmentModal.style.display === "flex") {
+        updateLiveAudioBadges();
+      }
     });
   }
 
-  // Global keyboard shortcuts to pause/resume playback
+  // Global keyboard shortcuts to pause/resume playback and close modals
   document.addEventListener("keydown", (e) => {
+    // Escape key closes modals
+    if (e.key === "Escape") {
+      if (segmentModal && segmentModal.style.display === "flex") {
+        closeSegmentModal();
+        return;
+      }
+      if (configModal && configModal.style.display === "flex") {
+        configModal.style.display = "none";
+        return;
+      }
+      const logsModal = document.getElementById("logsModal");
+      if (logsModal && logsModal.style.display === "flex") {
+        logsModal.style.display = "none";
+        return;
+      }
+    }
+
     if (!audioPlayer || !audioPlayer.src || audioPlayer.style.display === "none") return;
 
     // Alt+Space or Ctrl+Space: Works anywhere, even while editing text in inputs/textareas
@@ -1001,6 +1139,226 @@ function setupFloatingPlayer() {
       }
     }
   });
+}
+
+// --- Segment Transcription Functions ---
+function parseTimeString(timeStr) {
+  if (typeof timeStr === "number") return Math.max(0, timeStr);
+  if (!timeStr || typeof timeStr !== "string") return 0;
+  const parts = timeStr.trim().split(":");
+  try {
+    if (parts.length === 3) {
+      return Math.max(0, parseFloat(parts[0]) * 3600 + parseFloat(parts[1]) * 60 + parseFloat(parts[2]));
+    } else if (parts.length === 2) {
+      return Math.max(0, parseFloat(parts[0]) * 60 + parseFloat(parts[1]));
+    } else if (parts.length === 1) {
+      const val = parseFloat(parts[0]);
+      return isNaN(val) ? 0 : Math.max(0, val);
+    }
+  } catch (e) {
+    return 0;
+  }
+  return 0;
+}
+
+function openSegmentModal(initialStartSec = null, initialEndSec = null) {
+  if (!selectedMeeting) {
+    showToast("Selecciona una llamada primero");
+    return;
+  }
+  if (!selectedMeeting.has_audio) {
+    showToast("Esta grabación no tiene archivo de audio");
+    return;
+  }
+
+  const totalDuration = selectedMeeting.duration_seconds || (audioPlayer && audioPlayer.duration) || 0;
+
+  // Set Meeting Name and Total Duration Badge
+  if (segmentCallName) {
+    segmentCallName.textContent = selectedMeeting.name || selectedMeeting.folder_name || selectedMeeting.id;
+  }
+  if (segmentCallTotalDuration) {
+    segmentCallTotalDuration.textContent = `⏱️ Duración: ${formatDuration(totalDuration)}`;
+  }
+
+  // Compute default start/end times
+  let startSec = 0;
+  if (initialStartSec !== null && !isNaN(initialStartSec)) {
+    startSec = Math.max(0, Math.min(totalDuration, initialStartSec));
+  } else if (audioPlayer && audioPlayer.currentTime > 0) {
+    startSec = Math.floor(audioPlayer.currentTime);
+  }
+
+  let endSec = totalDuration;
+  if (initialEndSec !== null && !isNaN(initialEndSec)) {
+    endSec = Math.max(startSec + 1, Math.min(totalDuration, initialEndSec));
+  } else {
+    // 1-minute default window or total duration
+    endSec = totalDuration > 0 ? Math.min(totalDuration, startSec + 60) : 60;
+    if (endSec <= startSec) endSec = totalDuration;
+  }
+
+  if (inputSegmentStart) inputSegmentStart.value = formatDuration(startSec);
+  if (inputSegmentEnd) inputSegmentEnd.value = formatDuration(endSec);
+
+  // Sync selected model
+  if (segmentModelSelect && selectModel) {
+    segmentModelSelect.value = selectModel.value;
+  }
+
+  // Ensure default merge mode is checked
+  const mergeRadio = document.querySelector('input[name="segmentMergeMode"][value="merge"]');
+  if (mergeRadio) mergeRadio.checked = true;
+
+  updateSegmentDurationCalc();
+  updateLiveAudioBadges();
+
+  if (segmentModal) segmentModal.style.display = "flex";
+}
+
+function closeSegmentModal() {
+  stopSegmentPreview();
+  if (segmentModal) segmentModal.style.display = "none";
+}
+
+function updateLiveAudioBadges() {
+  const currentPos = audioPlayer ? Math.floor(audioPlayer.currentTime) : 0;
+  const formatted = formatDuration(currentPos);
+  if (startCurrentPosBadge) startCurrentPosBadge.textContent = formatted;
+  if (endCurrentPosBadge) endCurrentPosBadge.textContent = formatted;
+}
+
+function updateSegmentDurationCalc() {
+  if (!inputSegmentStart || !inputSegmentEnd) return false;
+  const totalDuration = selectedMeeting?.duration_seconds || (audioPlayer && audioPlayer.duration) || 0;
+  const startSec = parseTimeString(inputSegmentStart.value);
+  const endSec = parseTimeString(inputSegmentEnd.value);
+
+  if (isNaN(startSec) || isNaN(endSec) || endSec <= startSec) {
+    if (segmentCalculatedDuration) {
+      segmentCalculatedDuration.textContent = "Intervalo no válido";
+      segmentCalculatedDuration.className = "preview-val invalid";
+    }
+    if (segmentRangeSummary) {
+      segmentRangeSummary.textContent = "El tiempo de fin debe ser posterior al inicio";
+    }
+    if (btnExecuteSegmentTranscribe) btnExecuteSegmentTranscribe.disabled = true;
+    if (btnPreviewSegmentAudio) btnPreviewSegmentAudio.disabled = true;
+    return false;
+  }
+
+  const duration = endSec - startSec;
+  if (duration < 0.5) {
+    if (segmentCalculatedDuration) {
+      segmentCalculatedDuration.textContent = "Muy breve (< 1s)";
+      segmentCalculatedDuration.className = "preview-val invalid";
+    }
+    if (segmentRangeSummary) {
+      segmentRangeSummary.textContent = "El intervalo debe durar al menos 1 segundo";
+    }
+    if (btnExecuteSegmentTranscribe) btnExecuteSegmentTranscribe.disabled = true;
+    if (btnPreviewSegmentAudio) btnPreviewSegmentAudio.disabled = true;
+    return false;
+  }
+
+  if (segmentCalculatedDuration) {
+    segmentCalculatedDuration.textContent = formatDuration(duration);
+    segmentCalculatedDuration.className = "preview-val";
+  }
+  if (segmentRangeSummary) {
+    segmentRangeSummary.textContent = `(${formatDuration(startSec)} ➔ ${formatDuration(endSec)})`;
+  }
+  if (btnExecuteSegmentTranscribe) btnExecuteSegmentTranscribe.disabled = false;
+  if (btnPreviewSegmentAudio) btnPreviewSegmentAudio.disabled = false;
+  return true;
+}
+
+function startSegmentPreview() {
+  if (!updateSegmentDurationCalc()) return;
+  const startSec = parseTimeString(inputSegmentStart.value);
+  const endSec = parseTimeString(inputSegmentEnd.value);
+
+  if (!audioPlayer || !audioPlayer.src) return;
+
+  isSegmentPreviewActive = true;
+  segmentPreviewEndSec = endSec;
+
+  audioPlayer.currentTime = startSec;
+  audioPlayer.play();
+
+  if (btnPreviewSegmentAudio) btnPreviewSegmentAudio.style.display = "none";
+  if (btnStopPreviewSegmentAudio) btnStopPreviewSegmentAudio.style.display = "inline-flex";
+}
+
+function stopSegmentPreview() {
+  isSegmentPreviewActive = false;
+  segmentPreviewEndSec = null;
+  if (audioPlayer && !audioPlayer.paused) {
+    audioPlayer.pause();
+  }
+  if (btnPreviewSegmentAudio) btnPreviewSegmentAudio.style.display = "inline-flex";
+  if (btnStopPreviewSegmentAudio) btnStopPreviewSegmentAudio.style.display = "none";
+}
+
+async function executeSegmentTranscription() {
+  if (!selectedMeeting) return;
+  if (!updateSegmentDurationCalc()) return;
+
+  const startSec = parseTimeString(inputSegmentStart.value);
+  const endSec = parseTimeString(inputSegmentEnd.value);
+  const model = segmentModelSelect ? segmentModelSelect.value : selectModel.value;
+
+  const mergeRadio = document.querySelector('input[name="segmentMergeMode"]:checked');
+  const mergeMode = mergeRadio ? mergeRadio.value : "merge";
+
+  stopSegmentPreview();
+  closeSegmentModal();
+
+  const formattedRange = `${formatDuration(startSec)} - ${formatDuration(endSec)}`;
+  showStatusBanner(`✨ Transcribiendo segmento (${formattedRange}) con Gemini... Por favor espera.`, "info");
+  btnTranscribe.disabled = true;
+  if (btnOpenSegmentModal) btnOpenSegmentModal.disabled = true;
+  if (btnAudioCardSegment) btnAudioCardSegment.disabled = true;
+
+  try {
+    const res = await fetch(`/api/meetings/${selectedMeeting.id}/transcribe-segment`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        start_seconds: startSec,
+        end_seconds: endSec,
+        gemini_model: model,
+        merge_mode: mergeMode
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Error al transcribir segmento");
+
+    selectedMeeting = data.meeting;
+    currentTranscript = selectedMeeting.transcript;
+
+    if (data.warning) {
+      showToast(`⚠️ ${data.warning}`, 6000);
+    } else {
+      showToast(`¡Transcripción del tramo (${formattedRange}) completada con éxito!`);
+    }
+
+    hideStatusBanner();
+    renderMeetingDetail();
+    loadMeetings(selectedMeeting.id);
+
+    // Seek player to start of segment for instant playback review
+    seekAudioTo(startSec);
+
+  } catch (err) {
+    showStatusBanner(`⚠️ Error en transcripción de segmento: ${err.message}`, "error");
+    showToast(`Error: ${err.message}`);
+  } finally {
+    btnTranscribe.disabled = false;
+    if (btnOpenSegmentModal) btnOpenSegmentModal.disabled = false;
+    if (btnAudioCardSegment) btnAudioCardSegment.disabled = false;
+  }
 }
 
 function clearActiveSegmentHighlights() {

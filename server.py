@@ -217,6 +217,85 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
             self._send_json({"success": True, "meeting": updated_meeting})
             return
 
+        # API: Transcribe segment /api/meetings/<id>/transcribe-segment
+        match_transcribe_seg = re.match(r"^/api/meetings/([^/]+)/transcribe-segment$", path)
+        if match_transcribe_seg:
+            meeting_id = match_transcribe_seg.group(1)
+            body = self._read_json_body()
+            meeting = self.storage_manager.get_meeting(meeting_id)
+            if not meeting:
+                self._send_error("Reunión no encontrada", 404)
+                return
+            if not meeting.get("has_audio"):
+                self._send_error("No se encontró el archivo de audio para transcribir", 400)
+                return
+
+            custom_api_key = body.get("gemini_api_key")
+            custom_model = body.get("gemini_model")
+            raw_start = body.get("start_seconds", 0.0)
+            raw_end = body.get("end_seconds", None)
+            merge_mode = body.get("merge_mode", "merge")
+
+            if isinstance(raw_start, str):
+                start_seconds = GeminiTranscriber.parse_time_to_seconds(raw_start)
+            else:
+                try:
+                    start_seconds = float(raw_start or 0.0)
+                except (ValueError, TypeError):
+                    start_seconds = 0.0
+
+            if isinstance(raw_end, str):
+                end_seconds = GeminiTranscriber.parse_time_to_seconds(raw_end)
+            elif raw_end is not None:
+                try:
+                    end_seconds = float(raw_end)
+                except (ValueError, TypeError):
+                    end_seconds = None
+            else:
+                end_seconds = None
+
+            # Update status to transcribing
+            self.storage_manager.update_status(meeting_id, "transcribing")
+
+            try:
+                transcriber = GeminiTranscriber(api_key=custom_api_key, model=custom_model)
+                audio_path = meeting["audio_path"]
+                transcript_result = transcriber.transcribe_segment(
+                    audio_path,
+                    start_seconds=start_seconds,
+                    end_seconds=end_seconds
+                )
+
+                updated_meeting = self.storage_manager.merge_transcript_segment(
+                    meeting_id=meeting_id,
+                    segment_transcript=transcript_result,
+                    start_seconds=transcript_result["segment_bounds"]["start_seconds"],
+                    end_seconds=transcript_result["segment_bounds"]["end_seconds"],
+                    mode=merge_mode
+                )
+
+                self._send_json({
+                    "success": True,
+                    "meeting": updated_meeting,
+                    "segment": transcript_result.get("segment_bounds"),
+                    "warning": transcript_result.get("warning")
+                })
+            except Exception as e:
+                err_str = str(e)
+                if "<urlopen error" in err_str:
+                    err_str = re.sub(r"<urlopen error (.*)>", r"\1", err_str)
+                log_transcription_error(
+                    f"Fallo en transcripción de segmento ({meeting.get('name', meeting_id)}): {err_str}",
+                    exc=e,
+                    meeting_dir=meeting.get("meeting_dir"),
+                    meeting_id=meeting_id
+                )
+                prev_status = "transcribed" if meeting.get("has_transcript") else "error"
+                self.storage_manager.update_status(meeting_id, prev_status, error_message=err_str)
+                status_code = 400 if isinstance(e, (ValueError, FileNotFoundError)) else 500
+                self._send_error(f"Error al transcribir segmento: {err_str}", status_code)
+            return
+
         # API: Transcribe with Gemini /api/meetings/<id>/transcribe
         match_transcribe = re.match(r"^/api/meetings/([^/]+)/transcribe$", path)
         if match_transcribe:
@@ -232,6 +311,70 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
 
             custom_api_key = body.get("gemini_api_key")
             custom_model = body.get("gemini_model")
+
+            # Check if request specifies a segment range
+            if body.get("start_seconds") is not None or body.get("is_segment"):
+                raw_start = body.get("start_seconds", 0.0)
+                raw_end = body.get("end_seconds", None)
+                merge_mode = body.get("merge_mode", "merge")
+
+                if isinstance(raw_start, str):
+                    start_seconds = GeminiTranscriber.parse_time_to_seconds(raw_start)
+                else:
+                    try:
+                        start_seconds = float(raw_start or 0.0)
+                    except (ValueError, TypeError):
+                        start_seconds = 0.0
+
+                if isinstance(raw_end, str):
+                    end_seconds = GeminiTranscriber.parse_time_to_seconds(raw_end)
+                elif raw_end is not None:
+                    try:
+                        end_seconds = float(raw_end)
+                    except (ValueError, TypeError):
+                        end_seconds = None
+                else:
+                    end_seconds = None
+
+                self.storage_manager.update_status(meeting_id, "transcribing")
+                try:
+                    transcriber = GeminiTranscriber(api_key=custom_api_key, model=custom_model)
+                    audio_path = meeting["audio_path"]
+                    transcript_result = transcriber.transcribe_segment(
+                        audio_path,
+                        start_seconds=start_seconds,
+                        end_seconds=end_seconds
+                    )
+
+                    updated_meeting = self.storage_manager.merge_transcript_segment(
+                        meeting_id=meeting_id,
+                        segment_transcript=transcript_result,
+                        start_seconds=transcript_result["segment_bounds"]["start_seconds"],
+                        end_seconds=transcript_result["segment_bounds"]["end_seconds"],
+                        mode=merge_mode
+                    )
+
+                    self._send_json({
+                        "success": True,
+                        "meeting": updated_meeting,
+                        "segment": transcript_result.get("segment_bounds"),
+                        "warning": transcript_result.get("warning")
+                    })
+                except Exception as e:
+                    err_str = str(e)
+                    if "<urlopen error" in err_str:
+                        err_str = re.sub(r"<urlopen error (.*)>", r"\1", err_str)
+                    log_transcription_error(
+                        f"Fallo en transcripción de segmento ({meeting.get('name', meeting_id)}): {err_str}",
+                        exc=e,
+                        meeting_dir=meeting.get("meeting_dir"),
+                        meeting_id=meeting_id
+                    )
+                    prev_status = "transcribed" if meeting.get("has_transcript") else "error"
+                    self.storage_manager.update_status(meeting_id, prev_status, error_message=err_str)
+                    status_code = 400 if isinstance(e, (ValueError, FileNotFoundError)) else 500
+                    self._send_error(f"Error al transcribir segmento: {err_str}", status_code)
+                return
             
             # Update status to transcribing
             self.storage_manager.update_status(meeting_id, "transcribing")

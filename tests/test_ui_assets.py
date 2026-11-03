@@ -50,5 +50,40 @@ class TestUIAssets(unittest.TestCase):
         self.assertIn("altKey", content)
         self.assertIn("ctrlKey", content)
 
+    def test_segment_transcription_ui_assets(self):
+        html_path = os.path.join(self.web_dir, "index.html")
+        with open(html_path, "r", encoding="utf-8") as f:
+            html = f.read()
+
+        self.assertIn('id="btnOpenSegmentModal"', html)
+        self.assertIn('id="btnAudioCardSegment"', html)
+        self.assertIn('id="btnTranscriptHeaderSegment"', html)
+        self.assertIn('id="segmentModal"', html)
+        self.assertIn('id="inputSegmentStart"', html)
+        self.assertIn('id="inputSegmentEnd"', html)
+        self.assertIn('id="btnExecuteSegmentTranscribe"', html)
+        self.assertIn('id="btnPreviewSegmentAudio"', html)
+
+        css_path = os.path.join(self.web_dir, "style.css")
+        with open(css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        self.assertIn(".btn-segment", css)
+        self.assertIn(".btn-audio-segment", css)
+        self.assertIn(".segment-range-picker", css)
+        self.assertIn(".segment-preview-box", css)
+        self.assertIn(".input-time", css)
+
+        js_path = os.path.join(self.web_dir, "app.js")
+        with open(js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+
+        self.assertIn("openSegmentModal", js)
+        self.assertIn("closeSegmentModal", js)
+        self.assertIn("executeSegmentTranscription", js)
+        self.assertIn("parseTimeString", js)
+        self.assertIn("updateSegmentDurationCalc", js)
+        self.assertIn("/api/meetings/${selectedMeeting.id}/transcribe-segment", js)
+
 if __name__ == "__main__":
     unittest.main()

@@ -26,9 +26,12 @@ Aplicación de barra de menú para macOS que graba llamadas y reuniones con audi
   - **Lista de llamadas:** Con buscador, fecha, duración y estado (`Grabado`, `Transcribiendo`, `Transcrito`).
   - **Reproductor de Audio:** Con scrubber interactivo, velocidades de reproducción (`1.0x`, `1.25x`, `1.5x`, `2.0x`) y soporte para saltar instantáneamente a cualquier momento.
   - **Transcripción con Gemini:**
-    - Botón **"✨ Transcribir con Gemini"**.
+    - Botón **"✨ Transcribir Todo"** para transcribir la llamada completa.
+    - **Transcripción de Segmentos Específicos:** Selecciona cualquier rango de tiempo (`Desde` y `Hasta`, en formato `MM:SS`, `HH:MM:SS` o segundos, o usando la posición actual del reproductor con un clic) y pide a la IA que transcriba únicamente ese fragmento.
+    - **Preescucha del segmento:** Permite escuchar el fragmento seleccionado antes de enviar la solicitud.
+    - **Modo de combinación inteligente:** Puedes optar por combinar el nuevo segmento con la transcripción existente (reemplazando solo el intervalo seleccionado y preservando el resto de la reunión) o reemplazar la transcripción completa.
     - Diarización automática de interlocutores (`Speaker 1`, `Speaker 2`, etc.).
-    - Marcas de tiempo de inicio y fin para cada intervención.
+    - Marcas de tiempo de inicio y fin para cada intervención (ajustadas a la línea de tiempo real de la llamada).
     - Soporte para modelos como `gemini-2.5-flash`, `gemini-1.5-flash` o `gemini-2.5-pro`.
   - **Edición y Asignación de Nombres a Speakers:**
     - Asigna nombres reales a cada participante (ej. `Speaker 1` ➔ `Víctor`, `Speaker 2` ➔ `Cliente`) y aplícalos con un clic a todos los segmentos.

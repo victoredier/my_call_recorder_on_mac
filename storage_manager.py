@@ -302,6 +302,91 @@ class StorageManager:
         self._save_metadata(meeting_dir, metadata)
         return True
 
+    def merge_transcript_segment(
+        self,
+        meeting_id: str,
+        segment_transcript: Dict[str, Any],
+        start_seconds: float,
+        end_seconds: float,
+        mode: str = "merge"
+    ) -> Optional[Dict[str, Any]]:
+        """
+        Merges or replaces transcript data with newly transcribed segment.
+        If mode == 'merge' and existing transcript exists, replaces only overlapping
+        segments within [start_seconds, end_seconds], preserving prior and subsequent segments.
+        If mode == 'replace' or no prior transcript exists, replaces the entire transcript.
+        """
+        meeting = self.get_meeting(meeting_id)
+        if not meeting:
+            return None
+
+        existing_tr = meeting.get("transcript")
+        new_segments = list(segment_transcript.get("segments", []))
+
+        if not existing_tr or mode == "replace":
+            # Build full transcript from segment
+            full_transcript = {
+                "speakers": segment_transcript.get("speakers", []),
+                "speaker_mapping": segment_transcript.get("speaker_mapping", {}),
+                "segments": new_segments,
+                "meeting_id": meeting.get("id"),
+                "meeting_name": meeting.get("name"),
+                "created_at": meeting.get("created_at")
+            }
+            if segment_transcript.get("warning"):
+                full_transcript["warning"] = segment_transcript["warning"]
+            self.save_transcript(meeting_id, full_transcript)
+            return self.get_meeting(meeting_id)
+
+        # Merge mode with existing transcript
+        existing_segments = existing_tr.get("segments", [])
+
+        # Filter out existing segments that overlap with [start_seconds, end_seconds]
+        # Keep segments that strictly end before start_seconds or strictly begin after end_seconds
+        kept_segments = [
+            s for s in existing_segments
+            if float(s.get("end_seconds", 0.0)) <= start_seconds + 0.2
+            or float(s.get("start_seconds", 0.0)) >= end_seconds - 0.2
+        ]
+
+        # Combine kept existing segments + new segments
+        combined_segments = kept_segments + new_segments
+
+        # Sort by start_seconds
+        combined_segments.sort(key=lambda s: float(s.get("start_seconds", 0.0)))
+
+        # Re-assign sequential IDs
+        for idx, seg in enumerate(combined_segments, 1):
+            seg["id"] = idx
+
+        # Merge speakers list
+        existing_speakers = existing_tr.get("speakers", [])
+        new_speakers = segment_transcript.get("speakers", [])
+        segment_speakers = [s.get("speaker") for s in combined_segments if s.get("speaker")]
+        all_speakers = list(dict.fromkeys(existing_speakers + new_speakers + segment_speakers))
+
+        # Merge speaker mapping
+        mapping = dict(existing_tr.get("speaker_mapping", {}))
+        new_mapping = segment_transcript.get("speaker_mapping", {})
+        for spk in all_speakers:
+            if spk not in mapping:
+                mapping[spk] = new_mapping.get(spk, spk)
+
+        merged_tr = {
+            **existing_tr,
+            "speakers": all_speakers,
+            "speaker_mapping": mapping,
+            "segments": combined_segments,
+            "meeting_id": meeting.get("id"),
+            "meeting_name": meeting.get("name"),
+            "created_at": meeting.get("created_at")
+        }
+        if segment_transcript.get("warning"):
+            merged_tr["warning"] = segment_transcript["warning"]
+
+        self.save_transcript(meeting_id, merged_tr)
+        return self.get_meeting(meeting_id)
+
     def update_status(self, meeting_id: str, status: str, error_message: Optional[str] = None):
         """Updates meeting status (e.g. transcribing, error)."""
         meeting_dir = self.find_meeting_dir_by_id(meeting_id)

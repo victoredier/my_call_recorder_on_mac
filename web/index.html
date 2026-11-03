@@ -101,6 +101,9 @@
             <div class="audio-controls-row">
               <audio id="audioPlayer" preload="metadata" controls></audio>
               <div class="playback-controls">
+                <button type="button" id="btnAudioCardSegment" class="btn-audio-segment" title="Abrir selector para transcribir un tramo de la llamada">
+                  ✂️ Segmento con IA
+                </button>
                 <span class="speed-label">Velocidad:</span>
                 <div class="speed-buttons">
                   <button type="button" class="btn-speed active" data-speed="1.0">1.0x</button>
@@ -115,8 +118,11 @@
           <!-- Action Toolbar -->
           <div class="card actions-toolbar">
             <div class="transcribe-group">
-              <button id="btnTranscribe" class="btn btn-gemini">
-                <span class="gemini-sparkle">✨</span> Transcribir con Gemini
+              <button id="btnTranscribe" class="btn btn-gemini" title="Transcribir la llamada completa con Gemini">
+                <span class="gemini-sparkle">✨</span> Transcribir Todo
+              </button>
+              <button id="btnOpenSegmentModal" class="btn btn-secondary btn-segment" title="Transcribir solo un tramo de tiempo seleccionado de la llamada">
+                ⏱️ Transcribir Segmento...
               </button>
               <select id="selectModel" class="select-model">
                 <option value="gemini-2.5-flash">Gemini 2.5 Flash (Rápido y preciso)</option>
@@ -167,6 +173,9 @@
                 <button class="tab-btn" data-tab="rawjson">📄 JSON sin procesar</button>
               </div>
               <div class="transcript-header-actions" id="segmentsActions">
+                <button id="btnTranscriptHeaderSegment" class="btn btn-sm btn-secondary" title="Transcribir un tramo de tiempo con Gemini">
+                  ⏱️ Transcribir Segmento
+                </button>
                 <button id="btnAddSegment" class="btn btn-sm btn-outline">+ Agregar Segmento</button>
               </div>
             </div>
@@ -176,7 +185,7 @@
               <div id="segmentsList" class="segments-list">
                 <div class="no-transcript-msg">
                   Esta llamada aún no ha sido transcrita.<br>
-                  Haz clic en <strong>✨ Transcribir con Gemini</strong> para generar la transcripción automática con identificación de interlocutores y marcas de tiempo.
+                  Haz clic en <strong>✨ Transcribir Todo</strong> para la llamada completa, o en <strong>⏱️ Transcribir Segmento</strong> para seleccionar y procesar un intervalo de tiempo específico con Gemini.
                 </div>
               </div>
             </div>
@@ -192,6 +201,128 @@
 
         </div>
       </main>
+    </div>
+  </div>
+
+  <!-- Segment Transcription Modal -->
+  <div class="modal-overlay" id="segmentModal" style="display: none;">
+    <div class="modal-card modal-medium">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h3>⏱️ Transcribir Segmento con IA</h3>
+          <span class="modal-subtitle">Selecciona el intervalo de tiempo para procesar con Gemini</span>
+        </div>
+        <button id="btnCloseSegmentModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Meeting Info Banner -->
+        <div class="segment-call-info">
+          <span id="segmentCallName" class="segment-call-name">Llamada</span>
+          <span id="segmentCallTotalDuration" class="segment-call-duration">⏱️ Duración: 00:00</span>
+        </div>
+
+        <!-- Range Pickers -->
+        <div class="segment-range-picker">
+          <!-- Start Field -->
+          <div class="range-field">
+            <label for="inputSegmentStart">Tiempo de Inicio (Desde):</label>
+            <div class="range-input-group">
+              <input type="text" id="inputSegmentStart" class="input-time" placeholder="00:00:00" value="00:00:00" />
+              <button type="button" id="btnSetStartToCurrent" class="btn btn-sm btn-secondary" title="Usar posición actual del audio">
+                ⏱️ Actual (<span id="startCurrentPosBadge">00:00</span>)
+              </button>
+            </div>
+            <div class="quick-adjust-buttons">
+              <button type="button" class="btn-quick-adjust" data-target="start" data-delta="-10">-10s</button>
+              <button type="button" class="btn-quick-adjust" data-target="start" data-delta="-5">-5s</button>
+              <button type="button" class="btn-quick-adjust" data-target="start" data-delta="5">+5s</button>
+              <button type="button" class="btn-quick-adjust" data-target="start" data-delta="10">+10s</button>
+              <button type="button" class="btn-quick-adjust" data-target="start" data-set="0">00:00</button>
+            </div>
+          </div>
+
+          <!-- End Field -->
+          <div class="range-field">
+            <label for="inputSegmentEnd">Tiempo de Fin (Hasta):</label>
+            <div class="range-input-group">
+              <input type="text" id="inputSegmentEnd" class="input-time" placeholder="00:00:00" />
+              <button type="button" id="btnSetEndToCurrent" class="btn btn-sm btn-secondary" title="Usar posición actual del audio">
+                ⏱️ Actual (<span id="endCurrentPosBadge">00:00</span>)
+              </button>
+              <button type="button" id="btnSetEndToTotal" class="btn btn-sm btn-secondary" title="Fijar al final de la grabación">
+                Fin
+              </button>
+            </div>
+            <div class="quick-adjust-buttons">
+              <button type="button" class="btn-quick-adjust" data-target="end" data-delta="-10">-10s</button>
+              <button type="button" class="btn-quick-adjust" data-target="end" data-delta="-5">-5s</button>
+              <button type="button" class="btn-quick-adjust" data-target="end" data-delta="5">+5s</button>
+              <button type="button" class="btn-quick-adjust" data-target="end" data-delta="30">+30s</button>
+              <button type="button" class="btn-quick-adjust" data-target="end" data-delta="60">+1m</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Duration & Audio Preview Box -->
+        <div class="segment-preview-box">
+          <div class="segment-preview-info">
+            <div class="preview-line">
+              <span class="preview-label">Duración del tramo:</span>
+              <strong id="segmentCalculatedDuration" class="preview-val">00:00</strong>
+            </div>
+            <span id="segmentRangeSummary" class="preview-summary">(00:00 ➔ 00:00)</span>
+          </div>
+          <div class="segment-preview-player-actions">
+            <button type="button" id="btnPreviewSegmentAudio" class="btn btn-sm btn-outline" title="Reproducir este intervalo de audio">
+              ▶ Escuchar tramo
+            </button>
+            <button type="button" id="btnStopPreviewSegmentAudio" class="btn btn-sm btn-outline" style="display: none;" title="Detener audio">
+              ⏹ Detener
+            </button>
+          </div>
+        </div>
+
+        <!-- Model Selection -->
+        <div class="form-group">
+          <label for="segmentModelSelect">Modelo Gemini:</label>
+          <select id="segmentModelSelect">
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado - Rápido y preciso)</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro (Máxima capacidad)</option>
+          </select>
+        </div>
+
+        <!-- Integration Mode Option -->
+        <div class="form-group" id="mergeOptionGroup">
+          <label class="merge-option-label">Integración con la transcripción:</label>
+          <div class="radio-options">
+            <label class="radio-label">
+              <input type="radio" name="segmentMergeMode" value="merge" checked />
+              <div class="radio-text">
+                <span class="radio-title">🔄 Combinar con transcripción existente</span>
+                <span class="radio-desc">Reemplaza o inserta únicamente este intervalo de tiempo, conservando el resto de la reunión.</span>
+              </div>
+            </label>
+            <label class="radio-label">
+              <input type="radio" name="segmentMergeMode" value="replace" />
+              <div class="radio-text">
+                <span class="radio-title">⚠️ Reemplazar transcripción completa</span>
+                <span class="radio-desc">Descarta la transcripción anterior y deja únicamente los segmentos de este tramo.</span>
+              </div>
+            </label>
+          </div>
+        </div>
+
+        <div class="segment-hint">
+          💡 <strong>Tip:</strong> Puedes escribir el tiempo en formato <code>MM:SS</code> (ej. <code>01:30</code>), <code>HH:MM:SS</code> (ej. <code>00:01:30</code>) o segundos (ej. <code>90</code>).
+        </div>
+      </div>
+      <div class="modal-footer">
+        <button id="btnCancelSegmentModal" class="btn btn-secondary">Cancelar</button>
+        <button id="btnExecuteSegmentTranscribe" class="btn btn-gemini">
+          <span class="gemini-sparkle">✨</span> Transcribir este Segmento
+        </button>
+      </div>
     </div>
   </div>
 

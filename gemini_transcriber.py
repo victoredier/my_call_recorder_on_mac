@@ -91,6 +91,29 @@ Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructu
 No incluyas texto explicativo antes ni después del JSON.
 """
 
+    DEFAULT_SEGMENT_PROMPT = """Eres un transcriptor profesional de reuniones y llamadas de alta precisión.
+Transcribe este segmento de audio en su idioma original (ej. español) con diarización de interlocutores (ej. "Speaker 1", "Speaker 2", etc.).
+
+REGLAS CRÍTICAS DE SEGMENTACIÓN:
+1. Agrupa las frases continuas de un mismo interlocutor en turnos de habla naturales y completos. Solo cambia de segmento cuando hable otra persona o haya una pausa clara.
+2. Especifica speaker, start_time (HH:MM:SS o MM:SS relativo al segmento), end_time (HH:MM:SS o MM:SS) y text.
+3. Si en este intervalo no hay voces audibles o solo hay silencio/música de fondo, devuelve "segments": [].
+
+Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructura exacta:
+{
+  "speakers": ["Speaker 1", "Speaker 2"],
+  "segments": [
+    {
+      "speaker": "Speaker 1",
+      "start_time": "00:00:00",
+      "end_time": "00:00:15",
+      "text": "Texto correspondiente a este interlocutor..."
+    }
+  ]
+}
+No incluyas texto explicativo antes ni después del JSON.
+"""
+
     def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash"):
         config = get_saved_config()
         self.api_key = api_key or config.get("gemini_api_key", "")
@@ -403,6 +426,132 @@ No incluyas texto explicativo antes ni después del JSON.
                     pass
             if file_name_to_cleanup:
                 self._delete_file_gemini(file_name_to_cleanup)
+
+    def transcribe_segment(
+        self,
+        audio_path: str,
+        start_seconds: float,
+        end_seconds: Optional[float] = None,
+        custom_prompt: Optional[str] = None
+    ) -> Dict[str, Any]:
+        """
+        Transcribes a specific time segment [start_seconds, end_seconds] of the audio file.
+        Extracts the audio slice, sends it to Gemini, and shifts segment timestamps
+        by start_seconds so that the resulting transcript matches the timeline of the full call.
+        """
+        if not self.api_key:
+            raise ValueError("No se ha configurado la clave API de Gemini (GEMINI_API_KEY). Configúrala en los ajustes.")
+
+        if not os.path.isfile(audio_path):
+            raise FileNotFoundError(f"Archivo de audio no encontrado: {audio_path}")
+
+        try:
+            info = sf.info(audio_path)
+            total_duration = float(info.duration)
+            total_sr = info.samplerate
+        except Exception as e:
+            raise ValueError(f"No se pudo leer la información del archivo de audio: {e}")
+
+        if total_duration <= 0:
+            raise ValueError("El archivo de audio está vacío o tiene una duración de 0 segundos.")
+
+        start_sec = max(0.0, float(start_seconds or 0.0))
+        if start_sec >= total_duration:
+            raise ValueError(
+                f"El tiempo de inicio ({self.format_seconds(start_sec)}) no puede ser mayor o igual a la duración total ({self.format_seconds(total_duration)})."
+            )
+
+        if end_seconds is None or float(end_seconds) <= 0:
+            end_sec = total_duration
+        else:
+            end_sec = min(total_duration, float(end_seconds))
+
+        if end_sec <= start_sec:
+            raise ValueError(
+                f"El tiempo de fin ({self.format_seconds(end_sec)}) debe ser posterior al tiempo de inicio ({self.format_seconds(start_sec)})."
+            )
+
+        duration_slice = end_sec - start_sec
+        if duration_slice < 0.5:
+            raise ValueError("El segmento seleccionado debe durar al menos 1 segundo.")
+
+        # Meeting directory and temp slice path
+        meeting_dir = os.path.dirname(os.path.abspath(audio_path))
+        slice_tag = f"{int(start_sec * 1000)}_{int(end_sec * 1000)}_{int(time.time() * 1000)}"
+        temp_slice_path = os.path.join(meeting_dir, f".temp_slice_{slice_tag}.wav")
+
+        try:
+            start_frame = int(start_sec * total_sr)
+            stop_frame = int(end_sec * total_sr)
+            data, sr = sf.read(audio_path, start=start_frame, stop=stop_frame, dtype='float32')
+
+            if len(data) == 0:
+                raise ValueError("No se obtuvieron muestras de audio para el segmento especificado.")
+
+            # Downmix to mono if multi-channel
+            if len(data.shape) > 1 and data.shape[1] > 1:
+                data = data.mean(axis=1)
+
+            # Resample to 16kHz if rate is high to save bandwidth
+            target_sr = 16000
+            if sr > 24000:
+                if sr % target_sr == 0:
+                    step = sr // target_sr
+                    data = data[::step]
+                else:
+                    step = sr / target_sr
+                    indices = np.round(np.arange(0, len(data), step)).astype(np.int64)
+                    indices = indices[indices < len(data)]
+                    data = data[indices]
+                sr = target_sr
+
+            # Write temporary slice file
+            sf.write(temp_slice_path, data, sr, subtype='PCM_16')
+
+            prompt_to_use = custom_prompt or self.DEFAULT_SEGMENT_PROMPT
+            result = self.transcribe_audio(temp_slice_path, custom_prompt=prompt_to_use)
+
+            # Offset segment timestamps to full recording timeline
+            segments = result.get("segments", [])
+            for seg in segments:
+                cur_start = float(seg.get("start_seconds", 0.0))
+                cur_end = float(seg.get("end_seconds", 0.0))
+
+                if cur_end <= cur_start:
+                    cur_end = cur_start + 2.0
+
+                offset_start = round(cur_start + start_sec, 2)
+                offset_end = round(cur_end + start_sec, 2)
+
+                # Clamp end to end_sec (allow 2s buffer for natural sentence completion)
+                if offset_end > round(end_sec + 2.0, 2):
+                    offset_end = round(end_sec, 2)
+
+                seg["start_seconds"] = offset_start
+                seg["end_seconds"] = offset_end
+                seg["start_time"] = self.format_seconds(offset_start)
+                seg["end_time"] = self.format_seconds(offset_end)
+
+            if not segments and not result.get("warning"):
+                result["warning"] = "No se detectó diálogo ni palabras comprensibles en el segmento seleccionado."
+
+            result["is_segment"] = True
+            result["segment_bounds"] = {
+                "start_seconds": round(start_sec, 2),
+                "end_seconds": round(end_sec, 2),
+                "start_time": self.format_seconds(start_sec),
+                "end_time": self.format_seconds(end_sec),
+                "duration_seconds": round(duration_slice, 2)
+            }
+
+            return result
+
+        finally:
+            if os.path.exists(temp_slice_path):
+                try:
+                    os.remove(temp_slice_path)
+                except Exception:
+                    pass
 
     @classmethod
     def repair_truncated_json(cls, text: str) -> Dict[str, Any]:
