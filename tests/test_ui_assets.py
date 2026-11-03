@@ -85,5 +85,59 @@ class TestUIAssets(unittest.TestCase):
         self.assertIn("updateSegmentDurationCalc", js)
         self.assertIn("/api/meetings/${selectedMeeting.id}/transcribe-segment", js)
 
+    def test_search_replace_and_replacements_ui_assets(self):
+        html_path = os.path.join(self.web_dir, "index.html")
+        with open(html_path, "r", encoding="utf-8") as f:
+            html = f.read()
+
+        # HTML elements check
+        self.assertIn('id="btnReplacementsModal"', html)
+        self.assertIn('id="btnToggleSearchReplace"', html)
+        self.assertIn('id="searchReplaceBar"', html)
+        self.assertIn('id="srSearchInput"', html)
+        self.assertIn('id="srReplaceInput"', html)
+        self.assertIn('id="srMatchCounter"', html)
+        self.assertIn('id="btnSrPrev"', html)
+        self.assertIn('id="btnSrNext"', html)
+        self.assertIn('id="btnSrReplaceOne"', html)
+        self.assertIn('id="btnSrReplaceAll"', html)
+        self.assertIn('id="btnSrSaveToCentral"', html)
+        self.assertIn('id="replacementsAlertBanner"', html)
+        self.assertIn('id="btnApplyAllDetectedRep"', html)
+        self.assertIn('id="replacementsModal"', html)
+        self.assertIn('id="inputNewRepFind"', html)
+        self.assertIn('id="inputNewRepReplace"', html)
+        self.assertIn('id="btnAddNewReplacement"', html)
+
+        # CSS checks
+        css_path = os.path.join(self.web_dir, "style.css")
+        with open(css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        self.assertIn(".search-replace-bar", css)
+        self.assertIn(".sr-badge-counter", css)
+        self.assertIn(".replacements-alert-banner", css)
+        self.assertIn(".rep-chip", css)
+        self.assertIn(".rep-form-card", css)
+        self.assertIn(".segment-item.sr-has-match", css)
+        self.assertIn(".segment-item.sr-active-match", css)
+
+        # JS checks
+        js_path = os.path.join(self.web_dir, "app.js")
+        with open(js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+
+        self.assertIn("buildSearchRegex", js)
+        self.assertIn("toggleSearchReplace", js)
+        self.assertIn("performSearch", js)
+        self.assertIn("replaceOneMatch", js)
+        self.assertIn("replaceAllMatches", js)
+        self.assertIn("saveCurrentSearchToCentral", js)
+        self.assertIn("checkDetectedReplacements", js)
+        self.assertIn("applyAllDetectedReplacements", js)
+        self.assertIn("openReplacementsModal", js)
+        self.assertIn("closeReplacementsModal", js)
+        self.assertIn("/api/replacements", js)
+
 if __name__ == "__main__":
     unittest.main()

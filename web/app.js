@@ -90,14 +90,68 @@ const btnToggleApiKey = document.getElementById("btnToggleApiKey");
 const defaultModelSelect = document.getElementById("defaultModelSelect");
 const displayRecordingsPath = document.getElementById("displayRecordingsPath");
 
+// Search & Replace DOM Elements
+const btnToggleSearchReplace = document.getElementById("btnToggleSearchReplace");
+const searchReplaceBar = document.getElementById("searchReplaceBar");
+const btnSrClose = document.getElementById("btnSrClose");
+const srSearchInput = document.getElementById("srSearchInput");
+const srReplaceInput = document.getElementById("srReplaceInput");
+const srMatchCounter = document.getElementById("srMatchCounter");
+const btnSrPrev = document.getElementById("btnSrPrev");
+const btnSrNext = document.getElementById("btnSrNext");
+const srCaseSensitive = document.getElementById("srCaseSensitive");
+const srWholeWord = document.getElementById("srWholeWord");
+const btnSrReplaceOne = document.getElementById("btnSrReplaceOne");
+const btnSrReplaceAll = document.getElementById("btnSrReplaceAll");
+const btnSrSaveToCentral = document.getElementById("btnSrSaveToCentral");
+const srStatusText = document.getElementById("srStatusText");
+
+// Replacements Alert Banner Elements
+const replacementsAlertBanner = document.getElementById("replacementsAlertBanner");
+const repAlertSubtitle = document.getElementById("repAlertSubtitle");
+const repAlertTotalCount = document.getElementById("repAlertTotalCount");
+const btnApplyAllDetectedRep = document.getElementById("btnApplyAllDetectedRep");
+const btnOpenRepFromBanner = document.getElementById("btnOpenRepFromBanner");
+const btnDismissRepAlert = document.getElementById("btnDismissRepAlert");
+const repAlertChips = document.getElementById("repAlertChips");
+
+// Centralized Replacements Modal Elements
+const btnReplacementsModal = document.getElementById("btnReplacementsModal");
+const replacementsModal = document.getElementById("replacementsModal");
+const btnCloseReplacementsModal = document.getElementById("btnCloseReplacementsModal");
+const btnExitReplacementsModal = document.getElementById("btnExitReplacementsModal");
+const repFormTitle = document.getElementById("repFormTitle");
+const inputEditRepId = document.getElementById("inputEditRepId");
+const inputNewRepFind = document.getElementById("inputNewRepFind");
+const inputNewRepReplace = document.getElementById("inputNewRepReplace");
+const checkNewRepWholeWord = document.getElementById("checkNewRepWholeWord");
+const checkNewRepCase = document.getElementById("checkNewRepCase");
+const btnAddNewReplacement = document.getElementById("btnAddNewReplacement");
+const btnCancelEditRep = document.getElementById("btnCancelEditRep");
+const repFilterInput = document.getElementById("repFilterInput");
+const repTotalRulesBadge = document.getElementById("repTotalRulesBadge");
+const repItemsList = document.getElementById("repItemsList");
+const btnModalApplyAllToMeeting = document.getElementById("btnModalApplyAllToMeeting");
+const modalMatchesCount = document.getElementById("modalMatchesCount");
+
+// Search and Replacements State
+let centralizedReplacements = [];
+let activeDetectedMatches = [];
+let searchMatches = [];
+let currentMatchIndex = -1;
+let isSearchReplaceOpen = false;
+let dismissedMeetingAlerts = new Set();
+
 const toastEl = document.getElementById("toast");
 
 // --- Initialization ---
 document.addEventListener("DOMContentLoaded", () => {
   loadConfig();
   loadMeetings();
+  loadCentralizedReplacements();
   setupEventListeners();
   setupFloatingPlayer();
+  setupSearchReplaceAndReplacements();
 });
 
 function showToast(message, duration = 3000) {
@@ -310,10 +364,12 @@ function renderMeetingDetail() {
 function renderTranscriptUI() {
   if (!currentTranscript || !currentTranscript.segments || currentTranscript.segments.length === 0) {
     speakersCard.style.display = "none";
+    if (searchReplaceBar) searchReplaceBar.style.display = "none";
+    if (replacementsAlertBanner) replacementsAlertBanner.style.display = "none";
     segmentsListEl.innerHTML = `
       <div class="no-transcript-msg">
         Esta llamada aún no ha sido transcrita.<br>
-        Haz clic en <strong>✨ Transcribir con Gemini</strong> para generar la transcripción automática con interlocutores y marcas de tiempo.
+        Haz clic en <strong>✨ Transcribir Todo</strong> para la llamada completa, o en <strong>⏱️ Transcribir Segmento</strong> para seleccionar y procesar un intervalo de tiempo específico con Gemini.
       </div>
     `;
     rawJsonTextarea.value = "";
@@ -371,11 +427,30 @@ function renderTranscriptUI() {
       </div>
       <textarea class="segment-text" data-index="${index}" rows="2">${escapeHtml(seg.text || "")}</textarea>
     `;
+
+    const txtArea = segEl.querySelector(".segment-text");
+    if (txtArea) {
+      txtArea.addEventListener("input", (e) => {
+        if (currentTranscript && currentTranscript.segments && currentTranscript.segments[index]) {
+          currentTranscript.segments[index].text = e.target.value;
+        }
+        if (debounceUiRefresh) {
+          debounceUiRefresh();
+        }
+      });
+    }
+
     segmentsListEl.appendChild(segEl);
   });
 
   // Populate Raw JSON
   rawJsonTextarea.value = JSON.stringify(currentTranscript, null, 2);
+
+  // Check centralized replacements and search matches
+  checkDetectedReplacements();
+  if (isSearchReplaceOpen) {
+    performSearch(false);
+  }
 }
 
 // Seek audio to given seconds
@@ -1094,8 +1169,12 @@ function setupFloatingPlayer() {
 
   // Global keyboard shortcuts to pause/resume playback and close modals
   document.addEventListener("keydown", (e) => {
-    // Escape key closes modals
+    // Escape key closes modals and search bar
     if (e.key === "Escape") {
+      if (replacementsModal && replacementsModal.style.display === "flex") {
+        closeReplacementsModal();
+        return;
+      }
       if (segmentModal && segmentModal.style.display === "flex") {
         closeSegmentModal();
         return;
@@ -1107,6 +1186,19 @@ function setupFloatingPlayer() {
       const logsModal = document.getElementById("logsModal");
       if (logsModal && logsModal.style.display === "flex") {
         logsModal.style.display = "none";
+        return;
+      }
+      if (isSearchReplaceOpen) {
+        toggleSearchReplace(false);
+        return;
+      }
+    }
+
+    // Cmd+F or Ctrl+F: Open search and replace in transcript
+    if ((e.metaKey || e.ctrlKey) && (e.key === "f" || e.key === "F")) {
+      if (currentTranscript && currentTranscript.segments && currentTranscript.segments.length > 0) {
+        e.preventDefault();
+        toggleSearchReplace(true);
         return;
       }
     }
@@ -1383,3 +1475,712 @@ function highlightActiveSegment(currentTime) {
     }
   });
 }
+
+// ==========================================================================
+// Search & Replace and Centralized Replacements Logic
+// ==========================================================================
+
+let debounceTimer = null;
+function debounceUiRefresh() {
+  clearTimeout(debounceTimer);
+  debounceTimer = setTimeout(() => {
+    if (isSearchReplaceOpen) performSearch(false);
+    checkDetectedReplacements();
+  }, 350);
+}
+
+function buildSearchRegex(term, caseSensitive, wholeWord, global = true) {
+  if (!term) return null;
+  const escaped = term.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  let flags = global ? "gu" : "u";
+  if (!caseSensitive) flags += "i";
+  if (!wholeWord) {
+    return new RegExp(escaped, flags);
+  }
+  const startsWithWord = /^[\p{L}\p{N}_]/u.test(term);
+  const endsWithWord = /[\p{L}\p{N}_]$/u.test(term);
+  const prefix = startsWithWord ? "(?<![\\p{L}\\p{N}_])" : "(?<!\\S)";
+  const suffix = endsWithWord ? "(?![\\p{L}\\p{N}_])" : "(?!\\S)";
+  return new RegExp(`${prefix}${escaped}${suffix}`, flags);
+}
+
+async function loadCentralizedReplacements() {
+  try {
+    const res = await fetch("/api/replacements");
+    const data = await res.json();
+    centralizedReplacements = data.replacements || [];
+    renderReplacementsModalList();
+    checkDetectedReplacements();
+  } catch (err) {
+    console.error("Error loading centralized replacements:", err);
+  }
+}
+
+function toggleSearchReplace(forceState) {
+  if (!currentTranscript || !currentTranscript.segments || currentTranscript.segments.length === 0) {
+    showToast("La llamada no tiene transcripción activa para buscar");
+    return;
+  }
+  isSearchReplaceOpen = forceState !== undefined ? forceState : !isSearchReplaceOpen;
+  if (searchReplaceBar) {
+    searchReplaceBar.style.display = isSearchReplaceOpen ? "flex" : "none";
+  }
+  if (btnToggleSearchReplace) {
+    btnToggleSearchReplace.classList.toggle("active", isSearchReplaceOpen);
+  }
+  if (isSearchReplaceOpen) {
+    const activeEl = document.activeElement;
+    if (activeEl && activeEl.classList.contains("segment-text")) {
+      const selText = activeEl.value.substring(activeEl.selectionStart, activeEl.selectionEnd);
+      if (selText && selText.trim()) {
+        srSearchInput.value = selText.trim();
+      }
+    }
+    if (srSearchInput) {
+      srSearchInput.focus();
+      srSearchInput.select();
+    }
+    performSearch(true);
+  } else {
+    clearSearchHighlights();
+    searchMatches = [];
+    currentMatchIndex = -1;
+  }
+}
+
+function clearSearchHighlights() {
+  const segmentItems = segmentsListEl.querySelectorAll(".segment-item");
+  segmentItems.forEach(el => {
+    el.classList.remove("sr-has-match", "sr-active-match");
+  });
+}
+
+function performSearch(resetActiveIndex = false) {
+  const term = srSearchInput ? srSearchInput.value.trim() : "";
+  if (!term || !currentTranscript || !currentTranscript.segments) {
+    searchMatches = [];
+    currentMatchIndex = -1;
+    if (srMatchCounter) {
+      srMatchCounter.textContent = "0 coincidencias";
+      srMatchCounter.className = "sr-badge-counter";
+    }
+    if (btnSrPrev) btnSrPrev.disabled = true;
+    if (btnSrNext) btnSrNext.disabled = true;
+    if (srStatusText) srStatusText.textContent = "";
+    clearSearchHighlights();
+    return;
+  }
+
+  const caseSensitive = srCaseSensitive ? srCaseSensitive.checked : false;
+  const wholeWord = srWholeWord ? srWholeWord.checked : true;
+  let regex = null;
+  try {
+    regex = buildSearchRegex(term, caseSensitive, wholeWord, true);
+  } catch (e) {
+    console.error("Regex build error:", e);
+    return;
+  }
+
+  if (!regex) return;
+
+  searchMatches = [];
+  const segmentItems = segmentsListEl.querySelectorAll(".segment-item");
+
+  segmentItems.forEach((item, idx) => {
+    const textarea = item.querySelector(".segment-text");
+    const text = textarea ? textarea.value : (currentTranscript.segments[idx]?.text || "");
+    regex.lastIndex = 0;
+    let m;
+    let hasMatch = false;
+    while ((m = regex.exec(text)) !== null) {
+      hasMatch = true;
+      searchMatches.push({
+        segmentIndex: idx,
+        startIndex: m.index,
+        endIndex: m.index + m[0].length,
+        matchText: m[0]
+      });
+      if (m.index === regex.lastIndex) regex.lastIndex++;
+    }
+    if (hasMatch) {
+      item.classList.add("sr-has-match");
+    } else {
+      item.classList.remove("sr-has-match", "sr-active-match");
+    }
+  });
+
+  if (searchMatches.length === 0) {
+    if (srMatchCounter) {
+      srMatchCounter.textContent = "0 coincidencias";
+      srMatchCounter.className = "sr-badge-counter no-matches";
+    }
+    if (btnSrPrev) btnSrPrev.disabled = true;
+    if (btnSrNext) btnSrNext.disabled = true;
+    if (srStatusText) srStatusText.textContent = "No se encontraron coincidencias.";
+    currentMatchIndex = -1;
+    clearSearchHighlights();
+  } else {
+    if (btnSrPrev) btnSrPrev.disabled = false;
+    if (btnSrNext) btnSrNext.disabled = false;
+    if (srMatchCounter) {
+      srMatchCounter.className = "sr-badge-counter has-matches";
+    }
+    if (resetActiveIndex || currentMatchIndex < 0 || currentMatchIndex >= searchMatches.length) {
+      currentMatchIndex = 0;
+    }
+    goToMatch(currentMatchIndex);
+  }
+}
+
+function goToMatch(index) {
+  if (searchMatches.length === 0) return;
+  currentMatchIndex = index;
+  const match = searchMatches[currentMatchIndex];
+
+  if (srMatchCounter) {
+    srMatchCounter.textContent = `${currentMatchIndex + 1} de ${searchMatches.length}`;
+  }
+  if (srStatusText) {
+    srStatusText.textContent = `Coincidencia ${currentMatchIndex + 1} de ${searchMatches.length}`;
+  }
+
+  const segmentItems = segmentsListEl.querySelectorAll(".segment-item");
+  segmentItems.forEach((item, idx) => {
+    if (idx === match.segmentIndex) {
+      item.classList.add("sr-active-match");
+      item.scrollIntoView({ behavior: "smooth", block: "nearest" });
+      const textarea = item.querySelector(".segment-text");
+      if (textarea) {
+        textarea.focus();
+        textarea.setSelectionRange(match.startIndex, match.endIndex);
+      }
+    } else {
+      item.classList.remove("sr-active-match");
+    }
+  });
+}
+
+function replaceOneMatch() {
+  if (searchMatches.length === 0 || currentMatchIndex < 0) {
+    showToast("No hay ninguna coincidencia activa para reemplazar");
+    return;
+  }
+  const match = searchMatches[currentMatchIndex];
+  const replacement = srReplaceInput ? srReplaceInput.value : "";
+  const segmentItems = segmentsListEl.querySelectorAll(".segment-item");
+  const targetItem = segmentItems[match.segmentIndex];
+  if (!targetItem) return;
+
+  const textarea = targetItem.querySelector(".segment-text");
+  if (!textarea) return;
+
+  const oldVal = textarea.value;
+  const newVal = oldVal.substring(0, match.startIndex) + replacement + oldVal.substring(match.endIndex);
+  textarea.value = newVal;
+
+  if (currentTranscript && currentTranscript.segments && currentTranscript.segments[match.segmentIndex]) {
+    currentTranscript.segments[match.segmentIndex].text = newVal;
+  }
+
+  showToast("Coincidencia reemplazada");
+  const nextTarget = currentMatchIndex;
+  performSearch(false);
+  if (searchMatches.length > 0) {
+    goToMatch(Math.min(nextTarget, searchMatches.length - 1));
+  }
+  checkDetectedReplacements();
+  rawJsonTextarea.value = JSON.stringify(collectTranscriptFromUI(), null, 2);
+}
+
+function replaceAllMatches() {
+  const term = srSearchInput ? srSearchInput.value.trim() : "";
+  if (!term) {
+    showToast("Escribe un término a buscar");
+    return;
+  }
+  const replacement = srReplaceInput ? srReplaceInput.value : "";
+  const caseSensitive = srCaseSensitive ? srCaseSensitive.checked : false;
+  const wholeWord = srWholeWord ? srWholeWord.checked : true;
+  let regex = null;
+  try {
+    regex = buildSearchRegex(term, caseSensitive, wholeWord, true);
+  } catch (e) {
+    console.error("Regex build error:", e);
+    return;
+  }
+
+  if (!regex) return;
+
+  let totalReplaced = 0;
+  let segmentsCount = 0;
+  const segmentItems = segmentsListEl.querySelectorAll(".segment-item");
+
+  segmentItems.forEach((item, idx) => {
+    const textarea = item.querySelector(".segment-text");
+    if (!textarea) return;
+    const text = textarea.value;
+    regex.lastIndex = 0;
+    const m = text.match(regex);
+    if (m && m.length > 0) {
+      totalReplaced += m.length;
+      segmentsCount++;
+      const updated = text.replace(regex, replacement);
+      textarea.value = updated;
+      if (currentTranscript && currentTranscript.segments && currentTranscript.segments[idx]) {
+        currentTranscript.segments[idx].text = updated;
+      }
+    }
+  });
+
+  if (totalReplaced === 0) {
+    showToast("No se encontraron coincidencias para reemplazar");
+  } else {
+    showToast(`Se reemplazaron ${totalReplaced} apariciones en ${segmentsCount} segmento(s). Recuerda guardar cambios.`);
+    if (srStatusText) srStatusText.textContent = `Se reemplazaron ${totalReplaced} apariciones.`;
+    performSearch(true);
+    checkDetectedReplacements();
+    rawJsonTextarea.value = JSON.stringify(collectTranscriptFromUI(), null, 2);
+  }
+}
+
+async function saveCurrentSearchToCentral() {
+  const findTerm = srSearchInput ? srSearchInput.value.trim() : "";
+  const replaceTerm = srReplaceInput ? srReplaceInput.value.trim() : "";
+  if (!findTerm) {
+    showToast("Escribe la palabra que deseas agregar a la lista centralizada");
+    return;
+  }
+  const caseSensitive = srCaseSensitive ? srCaseSensitive.checked : false;
+  const wholeWord = srWholeWord ? srWholeWord.checked : true;
+
+  try {
+    const res = await fetch("/api/replacements", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        find: findTerm,
+        replace: replaceTerm,
+        case_sensitive: caseSensitive,
+        whole_word: wholeWord
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Error al guardar regla");
+    centralizedReplacements = data.replacements || [];
+    showToast(`"${findTerm}" ➔ "${replaceTerm}" guardado en la lista centralizada`);
+    checkDetectedReplacements();
+    renderReplacementsModalList();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+function checkDetectedReplacements() {
+  if (!selectedMeeting || !currentTranscript || !currentTranscript.segments || currentTranscript.segments.length === 0) {
+    if (replacementsAlertBanner) replacementsAlertBanner.style.display = "none";
+    activeDetectedMatches = [];
+    return;
+  }
+
+  if (centralizedReplacements.length === 0) {
+    if (replacementsAlertBanner) replacementsAlertBanner.style.display = "none";
+    activeDetectedMatches = [];
+    return;
+  }
+
+  const matches = [];
+  let totalCount = 0;
+
+  centralizedReplacements.forEach(rule => {
+    const findTerm = (rule.find || "").trim();
+    if (!findTerm) return;
+    let reg = null;
+    try {
+      reg = buildSearchRegex(findTerm, rule.case_sensitive, rule.whole_word, true);
+    } catch (e) {
+      return;
+    }
+    if (!reg) return;
+
+    let ruleMatches = 0;
+    const segmentItems = segmentsListEl.querySelectorAll(".segment-item");
+    segmentItems.forEach((item, idx) => {
+      const textarea = item.querySelector(".segment-text");
+      const text = textarea ? textarea.value : (currentTranscript.segments[idx]?.text || "");
+      reg.lastIndex = 0;
+      const found = text.match(reg);
+      if (found) ruleMatches += found.length;
+    });
+
+    if (ruleMatches > 0) {
+      totalCount += ruleMatches;
+      matches.push({
+        ...rule,
+        count: ruleMatches
+      });
+    }
+  });
+
+  activeDetectedMatches = matches;
+
+  if (matches.length > 0 && !dismissedMeetingAlerts.has(selectedMeeting.id)) {
+    if (replacementsAlertBanner) {
+      replacementsAlertBanner.classList.remove("success-mode");
+      replacementsAlertBanner.style.display = "flex";
+    }
+    if (repAlertTotalCount) repAlertTotalCount.textContent = totalCount;
+    if (repAlertSubtitle) {
+      repAlertSubtitle.textContent = `Se encontraron ${totalCount} apariciones de ${matches.length} término(s) de tu lista de reemplazos frecuentes.`;
+    }
+    if (repAlertChips) {
+      repAlertChips.innerHTML = "";
+      matches.forEach(item => {
+        const chip = document.createElement("div");
+        chip.className = "rep-chip";
+        chip.innerHTML = `
+          <span class="rep-chip-wrong">${escapeHtml(item.find)}</span>
+          <span class="rep-chip-arrow">➔</span>
+          <span class="rep-chip-right">${escapeHtml(item.replace)}</span>
+          <span class="rep-chip-count" title="${item.count} apariciones">${item.count}</span>
+          <button type="button" class="btn-chip-apply" title="Reemplazar solo '${escapeHtml(item.find)}'">Reemplazar</button>
+        `;
+        const applyBtn = chip.querySelector(".btn-chip-apply");
+        if (applyBtn) {
+          applyBtn.addEventListener("click", () => applySingleDetectedReplacement(item.id));
+        }
+        repAlertChips.appendChild(chip);
+      });
+    }
+  } else {
+    if (replacementsAlertBanner && !replacementsAlertBanner.classList.contains("success-mode")) {
+      replacementsAlertBanner.style.display = "none";
+    }
+  }
+
+  // Update modal apply button
+  if (btnModalApplyAllToMeeting && modalMatchesCount) {
+    if (matches.length > 0) {
+      btnModalApplyAllToMeeting.style.display = "inline-flex";
+      modalMatchesCount.textContent = totalCount;
+    } else {
+      btnModalApplyAllToMeeting.style.display = "none";
+    }
+  }
+
+  renderReplacementsModalList();
+}
+
+async function applyAllDetectedReplacements() {
+  if (!selectedMeeting || !currentTranscript) return;
+  if (activeDetectedMatches.length === 0) {
+    showToast("No hay términos frecuentes detectados en esta llamada");
+    return;
+  }
+  const ruleIds = activeDetectedMatches.map(m => m.id);
+  try {
+    const res = await fetch(`/api/meetings/${selectedMeeting.id}/apply-replacements`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rule_ids: ruleIds })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Error al aplicar reemplazos");
+    selectedMeeting = data.meeting;
+    currentTranscript = selectedMeeting.transcript;
+    renderTranscriptUI();
+    showToast(`¡Se reemplazaron ${data.replacements_count} términos frecuentes con éxito!`);
+
+    if (replacementsAlertBanner) {
+      replacementsAlertBanner.classList.add("success-mode");
+      if (repAlertSubtitle) repAlertSubtitle.textContent = "Todos los términos frecuentes fueron corregidos.";
+      if (repAlertChips) repAlertChips.innerHTML = "";
+      setTimeout(() => {
+        if (replacementsAlertBanner) replacementsAlertBanner.style.display = "none";
+      }, 3500);
+    }
+    loadMeetings(selectedMeeting.id);
+  } catch (err) {
+    showToast(`Error al aplicar reemplazos: ${err.message}`);
+  }
+}
+
+async function applySingleDetectedReplacement(ruleId) {
+  if (!selectedMeeting || !currentTranscript) return;
+  try {
+    const res = await fetch(`/api/meetings/${selectedMeeting.id}/apply-replacements`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ rule_ids: [ruleId] })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Error al aplicar reemplazo");
+    selectedMeeting = data.meeting;
+    currentTranscript = selectedMeeting.transcript;
+    renderTranscriptUI();
+    showToast(`Término reemplazado (${data.replacements_count} cambios)`);
+    loadMeetings(selectedMeeting.id);
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+function openReplacementsModal() {
+  if (replacementsModal) replacementsModal.style.display = "flex";
+  resetReplacementForm();
+  renderReplacementsModalList();
+}
+
+function closeReplacementsModal() {
+  if (replacementsModal) replacementsModal.style.display = "none";
+  resetReplacementForm();
+}
+
+function resetReplacementForm() {
+  if (inputEditRepId) inputEditRepId.value = "";
+  if (inputNewRepFind) inputNewRepFind.value = "";
+  if (inputNewRepReplace) inputNewRepReplace.value = "";
+  if (checkNewRepWholeWord) checkNewRepWholeWord.checked = true;
+  if (checkNewRepCase) checkNewRepCase.checked = false;
+  if (repFormTitle) repFormTitle.textContent = "➕ Agregar Nuevo Término de Reemplazo";
+  if (btnAddNewReplacement) btnAddNewReplacement.textContent = "+ Guardar Término";
+  if (btnCancelEditRep) btnCancelEditRep.style.display = "none";
+}
+
+function editReplacementRule(ruleId) {
+  const rule = centralizedReplacements.find(r => r.id === ruleId);
+  if (!rule) return;
+  if (inputEditRepId) inputEditRepId.value = rule.id;
+  if (inputNewRepFind) inputNewRepFind.value = rule.find;
+  if (inputNewRepReplace) inputNewRepReplace.value = rule.replace;
+  if (checkNewRepWholeWord) checkNewRepWholeWord.checked = Boolean(rule.whole_word);
+  if (checkNewRepCase) checkNewRepCase.checked = Boolean(rule.case_sensitive);
+  if (repFormTitle) repFormTitle.textContent = "✏️ Editar Término de Reemplazo";
+  if (btnAddNewReplacement) btnAddNewReplacement.textContent = "Actualizar Término";
+  if (btnCancelEditRep) btnCancelEditRep.style.display = "inline-block";
+  if (inputNewRepFind) {
+    inputNewRepFind.focus();
+    inputNewRepFind.select();
+  }
+}
+
+async function saveReplacementRuleFromForm() {
+  const findTerm = inputNewRepFind ? inputNewRepFind.value.trim() : "";
+  const replaceTerm = inputNewRepReplace ? inputNewRepReplace.value.trim() : "";
+  if (!findTerm) {
+    showToast("El término a buscar no puede estar vacío");
+    return;
+  }
+  const wholeWord = checkNewRepWholeWord ? checkNewRepWholeWord.checked : true;
+  const caseSensitive = checkNewRepCase ? checkNewRepCase.checked : false;
+  const editId = inputEditRepId ? inputEditRepId.value : "";
+
+  const url = editId ? `/api/replacements/${editId}` : "/api/replacements";
+  try {
+    const res = await fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        find: findTerm,
+        replace: replaceTerm,
+        whole_word: wholeWord,
+        case_sensitive: caseSensitive
+      })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Error al guardar regla");
+    centralizedReplacements = data.replacements || [];
+    showToast(editId ? "Regla actualizada" : "Regla agregada a la lista centralizada");
+    resetReplacementForm();
+    renderReplacementsModalList();
+    checkDetectedReplacements();
+  } catch (err) {
+    showToast(`Error: ${err.message}`);
+  }
+}
+
+async function deleteReplacementRule(ruleId) {
+  const rule = centralizedReplacements.find(r => r.id === ruleId);
+  const name = rule ? rule.find : "esta regla";
+  if (!confirm(`¿Eliminar el reemplazo de "${name}" de la lista centralizada?`)) {
+    return;
+  }
+  try {
+    const res = await fetch(`/api/replacements/${ruleId}`, { method: "DELETE" });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Error al eliminar");
+    centralizedReplacements = data.replacements || [];
+    showToast("Regla eliminada");
+    renderReplacementsModalList();
+    checkDetectedReplacements();
+  } catch (err) {
+    showToast(`Error al eliminar regla: ${err.message}`);
+  }
+}
+
+function renderReplacementsModalList() {
+  if (!repItemsList) return;
+  const filterQuery = repFilterInput ? repFilterInput.value.trim().toLowerCase() : "";
+  let filtered = centralizedReplacements;
+  if (filterQuery) {
+    filtered = filtered.filter(r =>
+      (r.find || "").toLowerCase().includes(filterQuery) ||
+      (r.replace || "").toLowerCase().includes(filterQuery)
+    );
+  }
+
+  if (repTotalRulesBadge) {
+    repTotalRulesBadge.textContent = `${centralizedReplacements.length} regla${centralizedReplacements.length === 1 ? "" : "s"}`;
+  }
+
+  if (filtered.length === 0) {
+    repItemsList.innerHTML = `<div class="rep-empty-state">${centralizedReplacements.length === 0 ? "No hay reglas de reemplazo guardadas todavía. Agrega tus tecnicismos arriba." : "No hay reglas que coincidan con la búsqueda."}</div>`;
+    return;
+  }
+
+  repItemsList.innerHTML = "";
+  filtered.forEach(rule => {
+    const detected = activeDetectedMatches.find(m => m.id === rule.id);
+    const matchCount = detected ? detected.count : 0;
+
+    const card = document.createElement("div");
+    card.className = "rep-item-card";
+    card.innerHTML = `
+      <div class="rep-item-info">
+        <div class="rep-item-pair">
+          <span class="rep-item-wrong">${escapeHtml(rule.find)}</span>
+          <span class="rep-item-arrow">➔</span>
+          <span class="rep-item-right">${escapeHtml(rule.replace)}</span>
+        </div>
+        <div class="rep-item-meta">
+          ${rule.whole_word ? '<span class="rep-tag-badge">Palabra completa</span>' : '<span class="rep-tag-badge">Subcadena</span>'}
+          ${rule.case_sensitive ? '<span class="rep-tag-badge">Sensible a mayúsculas</span>' : ''}
+          ${matchCount > 0 ? `<span class="rep-match-badge">⚠️ ${matchCount} en llamada actual</span>` : ""}
+        </div>
+      </div>
+      <div class="rep-item-actions">
+        ${matchCount > 0 ? `<button type="button" class="btn btn-sm btn-warning btn-apply-here" title="Reemplazar en esta llamada">⚡ Reemplazar (${matchCount})</button>` : ""}
+        <button type="button" class="btn-icon btn-edit-rep" title="Editar regla">✏️</button>
+        <button type="button" class="btn-icon btn-del-rep" title="Eliminar regla">🗑️</button>
+      </div>
+    `;
+
+    const applyBtn = card.querySelector(".btn-apply-here");
+    if (applyBtn) {
+      applyBtn.addEventListener("click", () => applySingleDetectedReplacement(rule.id));
+    }
+    const editBtn = card.querySelector(".btn-edit-rep");
+    if (editBtn) {
+      editBtn.addEventListener("click", () => editReplacementRule(rule.id));
+    }
+    const delBtn = card.querySelector(".btn-del-rep");
+    if (delBtn) {
+      delBtn.addEventListener("click", () => deleteReplacementRule(rule.id));
+    }
+
+    repItemsList.appendChild(card);
+  });
+}
+
+function setupSearchReplaceAndReplacements() {
+  if (btnToggleSearchReplace) {
+    btnToggleSearchReplace.addEventListener("click", () => toggleSearchReplace());
+  }
+  if (btnSrClose) {
+    btnSrClose.addEventListener("click", () => toggleSearchReplace(false));
+  }
+  if (srSearchInput) {
+    srSearchInput.addEventListener("input", () => performSearch(true));
+    srSearchInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (e.shiftKey) {
+          if (btnSrPrev) btnSrPrev.click();
+        } else {
+          if (btnSrNext) btnSrNext.click();
+        }
+      }
+    });
+  }
+  if (srReplaceInput) {
+    srReplaceInput.addEventListener("keydown", (e) => {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        if (e.metaKey || e.ctrlKey) {
+          if (btnSrReplaceAll) btnSrReplaceAll.click();
+        } else {
+          if (btnSrReplaceOne) btnSrReplaceOne.click();
+        }
+      }
+    });
+  }
+  if (btnSrPrev) {
+    btnSrPrev.addEventListener("click", () => {
+      if (searchMatches.length > 0) {
+        goToMatch((currentMatchIndex - 1 + searchMatches.length) % searchMatches.length);
+      }
+    });
+  }
+  if (btnSrNext) {
+    btnSrNext.addEventListener("click", () => {
+      if (searchMatches.length > 0) {
+        goToMatch((currentMatchIndex + 1) % searchMatches.length);
+      }
+    });
+  }
+  if (srCaseSensitive) {
+    srCaseSensitive.addEventListener("change", () => performSearch(true));
+  }
+  if (srWholeWord) {
+    srWholeWord.addEventListener("change", () => performSearch(true));
+  }
+  if (btnSrReplaceOne) {
+    btnSrReplaceOne.addEventListener("click", replaceOneMatch);
+  }
+  if (btnSrReplaceAll) {
+    btnSrReplaceAll.addEventListener("click", replaceAllMatches);
+  }
+  if (btnSrSaveToCentral) {
+    btnSrSaveToCentral.addEventListener("click", saveCurrentSearchToCentral);
+  }
+
+  // Replacements Alert Banner
+  if (btnApplyAllDetectedRep) {
+    btnApplyAllDetectedRep.addEventListener("click", applyAllDetectedReplacements);
+  }
+  if (btnOpenRepFromBanner) {
+    btnOpenRepFromBanner.addEventListener("click", openReplacementsModal);
+  }
+  if (btnDismissRepAlert) {
+    btnDismissRepAlert.addEventListener("click", () => {
+      if (selectedMeeting) dismissedMeetingAlerts.add(selectedMeeting.id);
+      if (replacementsAlertBanner) replacementsAlertBanner.style.display = "none";
+    });
+  }
+
+  // Centralized Replacements Modal
+  if (btnReplacementsModal) {
+    btnReplacementsModal.addEventListener("click", openReplacementsModal);
+  }
+  if (btnCloseReplacementsModal) {
+    btnCloseReplacementsModal.addEventListener("click", closeReplacementsModal);
+  }
+  if (btnExitReplacementsModal) {
+    btnExitReplacementsModal.addEventListener("click", closeReplacementsModal);
+  }
+  if (btnAddNewReplacement) {
+    btnAddNewReplacement.addEventListener("click", saveReplacementRuleFromForm);
+  }
+  if (btnCancelEditRep) {
+    btnCancelEditRep.addEventListener("click", resetReplacementForm);
+  }
+  if (repFilterInput) {
+    repFilterInput.addEventListener("input", renderReplacementsModalList);
+  }
+  if (btnModalApplyAllToMeeting) {
+    btnModalApplyAllToMeeting.addEventListener("click", () => {
+      applyAllDetectedReplacements();
+      closeReplacementsModal();
+    });
+  }
+}
+

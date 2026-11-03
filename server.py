@@ -12,6 +12,7 @@ from socketserver import ThreadingMixIn
 from storage_manager import StorageManager
 from gemini_transcriber import GeminiTranscriber, get_saved_config, save_config
 from error_logger import read_logs, clear_logs, log_transcription_error, get_central_log_path
+from replacements_manager import ReplacementsManager
 
 class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
     daemon_threads = True
@@ -25,6 +26,7 @@ class ThreadedHTTPServer(ThreadingMixIn, HTTPServer):
 
 class CallRecorderHandler(BaseHTTPRequestHandler):
     storage_manager = StorageManager()
+    replacements_manager = ReplacementsManager()
 
     def finish(self):
         try:
@@ -148,6 +150,27 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
                 "meeting_id": meeting_id,
                 "logs": logs
             })
+            return
+
+        # API: Get centralized replacements /api/replacements
+        if path == "/api/replacements":
+            self._send_json({"replacements": self.replacements_manager.get_replacements()})
+            return
+
+        # API: Detect replacements in meeting /api/meetings/<id>/detect-replacements
+        match_detect_get = re.match(r"^/api/meetings/([^/]+)/detect-replacements$", path)
+        if match_detect_get:
+            meeting_id = match_detect_get.group(1)
+            meeting = self.storage_manager.get_meeting(meeting_id)
+            if not meeting:
+                self._send_error("Reunión no encontrada", 404)
+                return
+            tr = meeting.get("transcript")
+            if not tr or not tr.get("segments"):
+                self._send_json({"matches": []})
+                return
+            matches = self.replacements_manager.detect_matches_in_segments(tr.get("segments", []))
+            self._send_json({"matches": matches})
             return
 
         self._send_error("Ruta no encontrada", 404)
@@ -428,6 +451,114 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
             self._send_json({"success": success})
             return
 
+        # API: Add or bulk update replacements /api/replacements
+        if path == "/api/replacements":
+            body = self._read_json_body()
+            if "replacements" in body and isinstance(body["replacements"], list):
+                saved = self.replacements_manager.set_replacements(body["replacements"])
+                self._send_json({"success": True, "replacements": saved})
+                return
+            find_term = body.get("find", "").strip()
+            if not find_term:
+                self._send_error("El término a buscar no puede estar vacío", 400)
+                return
+            replace_term = body.get("replace", "")
+            case_sensitive = bool(body.get("case_sensitive", False))
+            whole_word = bool(body.get("whole_word", True))
+            rule = self.replacements_manager.add_replacement(
+                find=find_term,
+                replace=replace_term,
+                case_sensitive=case_sensitive,
+                whole_word=whole_word
+            )
+            self._send_json({
+                "success": True,
+                "replacement": rule,
+                "replacements": self.replacements_manager.get_replacements()
+            })
+            return
+
+        # API: Update specific replacement rule /api/replacements/<id>
+        match_rep_update = re.match(r"^/api/replacements/([^/]+)$", path)
+        if match_rep_update:
+            rule_id = match_rep_update.group(1)
+            body = self._read_json_body()
+            find_term = body.get("find", "").strip()
+            if not find_term:
+                self._send_error("El término a buscar no puede estar vacío", 400)
+                return
+            replace_term = body.get("replace", "")
+            case_sensitive = bool(body.get("case_sensitive", False))
+            whole_word = bool(body.get("whole_word", True))
+            updated = self.replacements_manager.update_replacement(
+                rule_id=rule_id,
+                find=find_term,
+                replace=replace_term,
+                case_sensitive=case_sensitive,
+                whole_word=whole_word
+            )
+            if not updated:
+                self._send_error("Regla de reemplazo no encontrada", 404)
+                return
+            self._send_json({
+                "success": True,
+                "replacement": updated,
+                "replacements": self.replacements_manager.get_replacements()
+            })
+            return
+
+        # API: Detect replacements in meeting transcript /api/meetings/<id>/detect-replacements
+        match_detect_post = re.match(r"^/api/meetings/([^/]+)/detect-replacements$", path)
+        if match_detect_post:
+            meeting_id = match_detect_post.group(1)
+            meeting = self.storage_manager.get_meeting(meeting_id)
+            if not meeting:
+                self._send_error("Reunión no encontrada", 404)
+                return
+            tr = meeting.get("transcript")
+            if not tr or not tr.get("segments"):
+                self._send_json({"matches": []})
+                return
+            body = self._read_json_body()
+            custom_rules = body.get("rules")
+            matches = self.replacements_manager.detect_matches_in_segments(
+                segments=tr.get("segments", []),
+                rules=custom_rules
+            )
+            self._send_json({"matches": matches})
+            return
+
+        # API: Apply replacements to meeting transcript /api/meetings/<id>/apply-replacements
+        match_apply_rep = re.match(r"^/api/meetings/([^/]+)/apply-replacements$", path)
+        if match_apply_rep:
+            meeting_id = match_apply_rep.group(1)
+            body = self._read_json_body()
+            meeting = self.storage_manager.get_meeting(meeting_id)
+            if not meeting:
+                self._send_error("Reunión no encontrada", 404)
+                return
+            tr = meeting.get("transcript")
+            if not tr or not tr.get("segments"):
+                self._send_error("La reunión no tiene transcripción", 400)
+                return
+            rule_ids = body.get("rule_ids")
+            custom_rules = body.get("rules")
+            updated_segments, total_replaced, stats = self.replacements_manager.apply_rules_to_segments(
+                segments=tr.get("segments", []),
+                rule_ids=rule_ids,
+                custom_rules=custom_rules
+            )
+            tr["segments"] = updated_segments
+            self.storage_manager.save_transcript(meeting_id, tr)
+            updated_meeting = self.storage_manager.get_meeting(meeting_id)
+            self._send_json({
+                "success": True,
+                "meeting": updated_meeting,
+                "replacements_count": total_replaced,
+                "stats": stats
+            })
+            return
+
         self._send_error("Ruta POST no encontrada", 404)
 
     def do_DELETE(self):
@@ -443,6 +574,21 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
                 self._send_error("No se pudo eliminar la reunión", 404)
                 return
             self._send_json({"success": True, "deleted_id": meeting_id})
+            return
+
+        # API: Delete replacement rule /api/replacements/<id>
+        match_delete_rep = re.match(r"^/api/replacements/([^/]+)$", path)
+        if match_delete_rep:
+            rule_id = match_delete_rep.group(1)
+            deleted = self.replacements_manager.delete_replacement(rule_id)
+            if not deleted:
+                self._send_error("Regla de reemplazo no encontrada", 404)
+                return
+            self._send_json({
+                "success": True,
+                "deleted_id": rule_id,
+                "replacements": self.replacements_manager.get_replacements()
+            })
             return
 
         self._send_error("Ruta DELETE no encontrada", 404)

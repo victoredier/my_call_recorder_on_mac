@@ -9,6 +9,7 @@ import soundfile as sf
 
 from server import CallRecorderHandler
 from storage_manager import StorageManager
+from replacements_manager import ReplacementsManager
 
 class MockSocket:
     def __init__(self, data=b""):
@@ -34,6 +35,9 @@ class TestServerHandlerDirect(unittest.TestCase):
         self.test_dir = tempfile.mkdtemp()
         self.storage = StorageManager(base_path=self.test_dir)
         CallRecorderHandler.storage_manager = self.storage
+        self.rep_file = os.path.join(self.test_dir, "replacements.json")
+        self.rep_manager = ReplacementsManager(filepath=self.rep_file)
+        CallRecorderHandler.replacements_manager = self.rep_manager
 
     def tearDown(self):
         shutil.rmtree(self.test_dir, ignore_errors=True)
@@ -156,6 +160,77 @@ class TestServerHandlerDirect(unittest.TestCase):
         self.assertIn("200", status_line)
         del_res = json.loads(body.decode("utf-8"))
         self.assertTrue(del_res["success"])
+
+    def test_replacements_api_flow(self):
+        # 1. GET /api/replacements (empty initially)
+        status_line, _, body = self._run_request("GET", "/api/replacements")
+        self.assertIn("200", status_line)
+        data = json.loads(body.decode("utf-8"))
+        self.assertEqual(data["replacements"], [])
+
+        # 2. POST /api/replacements (add rule)
+        add_body = json.dumps({
+            "find": "Cuvernetes",
+            "replace": "Kubernetes",
+            "case_sensitive": False,
+            "whole_word": True
+        }).encode("utf-8")
+        status_line, _, body = self._run_request(
+            "POST",
+            "/api/replacements",
+            headers={"Content-Type": "application/json"},
+            body=add_body
+        )
+        self.assertIn("200", status_line)
+        res = json.loads(body.decode("utf-8"))
+        self.assertTrue(res["success"])
+        rule_id = res["replacement"]["id"]
+        self.assertEqual(res["replacement"]["find"], "Cuvernetes")
+        self.assertEqual(res["replacement"]["replace"], "Kubernetes")
+
+        # 3. Create meeting with transcript containing "cuvernetes"
+        m = self.storage.create_meeting(name="Meeting Tech")
+        tr_data = {
+            "speakers": ["Speaker 1"],
+            "speaker_mapping": {"Speaker 1": "Speaker 1"},
+            "segments": [
+                {"id": 1, "speaker": "Speaker 1", "text": "Hablamos de cuvernetes en la reunión."}
+            ]
+        }
+        self.storage.save_transcript(m["id"], tr_data)
+
+        # 4. POST /api/meetings/<id>/detect-replacements
+        status_line, _, body = self._run_request(
+            "POST",
+            f"/api/meetings/{m['id']}/detect-replacements",
+            headers={"Content-Type": "application/json"},
+            body=b"{}"
+        )
+        self.assertIn("200", status_line)
+        detect_res = json.loads(body.decode("utf-8"))
+        self.assertEqual(len(detect_res["matches"]), 1)
+        self.assertEqual(detect_res["matches"][0]["count"], 1)
+
+        # 5. POST /api/meetings/<id>/apply-replacements
+        status_line, _, body = self._run_request(
+            "POST",
+            f"/api/meetings/{m['id']}/apply-replacements",
+            headers={"Content-Type": "application/json"},
+            body=json.dumps({"rule_ids": [rule_id]}).encode("utf-8")
+        )
+        self.assertIn("200", status_line)
+        apply_res = json.loads(body.decode("utf-8"))
+        self.assertTrue(apply_res["success"])
+        self.assertEqual(apply_res["replacements_count"], 1)
+        updated_text = apply_res["meeting"]["transcript"]["segments"][0]["text"]
+        self.assertEqual(updated_text, "Hablamos de Kubernetes en la reunión.")
+
+        # 6. DELETE /api/replacements/<id>
+        status_line, _, body = self._run_request("DELETE", f"/api/replacements/{rule_id}")
+        self.assertIn("200", status_line)
+        del_res = json.loads(body.decode("utf-8"))
+        self.assertTrue(del_res["success"])
+        self.assertEqual(len(del_res["replacements"]), 0)
 
 if __name__ == "__main__":
     unittest.main()

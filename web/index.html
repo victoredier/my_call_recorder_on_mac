@@ -25,6 +25,9 @@
         <button id="btnOpenFinder" class="btn btn-secondary" title="Abrir carpeta de grabaciones en Finder">
           📂 Abrir en Finder
         </button>
+        <button id="btnReplacementsModal" class="btn btn-secondary" title="Lista centralizada de palabras y tecnicismos frecuentes">
+          📚 Reemplazos
+        </button>
         <button id="btnLogsModal" class="btn btn-secondary" title="Ver registro de errores de grabación y transcripción">
           📜 Logs de Errores
         </button>
@@ -173,10 +176,82 @@
                 <button class="tab-btn" data-tab="rawjson">📄 JSON sin procesar</button>
               </div>
               <div class="transcript-header-actions" id="segmentsActions">
+                <button id="btnToggleSearchReplace" class="btn btn-sm btn-secondary" title="Buscar y reemplazar texto en la transcripción (⌘F)">
+                  🔍 Buscar y Reemplazar
+                </button>
                 <button id="btnTranscriptHeaderSegment" class="btn btn-sm btn-secondary" title="Transcribir un tramo de tiempo con Gemini">
                   ⏱️ Transcribir Segmento
                 </button>
                 <button id="btnAddSegment" class="btn btn-sm btn-outline">+ Agregar Segmento</button>
+              </div>
+            </div>
+
+            <!-- Search & Replace Bar -->
+            <div id="searchReplaceBar" class="search-replace-bar" style="display: none;">
+              <div class="sr-row sr-search-row">
+                <div class="sr-input-wrap">
+                  <span class="sr-input-icon">🔍</span>
+                  <input type="text" id="srSearchInput" class="sr-input" placeholder="Buscar palabra o frase..." autocomplete="off" />
+                  <span id="srMatchCounter" class="sr-badge-counter">0 coincidencias</span>
+                </div>
+                <div class="sr-nav-group">
+                  <button type="button" id="btnSrPrev" class="btn-sr-icon" title="Coincidencia anterior (Shift+Enter)">◀</button>
+                  <button type="button" id="btnSrNext" class="btn-sr-icon" title="Siguiente coincidencia (Enter)">▶</button>
+                </div>
+                <div class="sr-options-group">
+                  <label class="sr-checkbox-label" title="Diferenciar mayúsculas de minúsculas">
+                    <input type="checkbox" id="srCaseSensitive" />
+                    <span>Aa Mayús/minús</span>
+                  </label>
+                  <label class="sr-checkbox-label" title="Coincidir solo con palabras completas">
+                    <input type="checkbox" id="srWholeWord" checked />
+                    <span>\b Palabra completa</span>
+                  </label>
+                </div>
+                <button type="button" id="btnSrClose" class="btn-sr-close" title="Cerrar panel de búsqueda">&times;</button>
+              </div>
+              <div class="sr-row sr-replace-row">
+                <div class="sr-input-wrap">
+                  <span class="sr-input-icon">✏️</span>
+                  <input type="text" id="srReplaceInput" class="sr-input" placeholder="Reemplazar con..." autocomplete="off" />
+                </div>
+                <div class="sr-actions-group">
+                  <button type="button" id="btnSrReplaceOne" class="btn btn-sm btn-secondary" title="Reemplazar la coincidencia actual">
+                    Reemplazar
+                  </button>
+                  <button type="button" id="btnSrReplaceAll" class="btn btn-sm btn-primary" title="Reemplazar todas las apariciones en la transcripción">
+                    Reemplazar Todo
+                  </button>
+                  <button type="button" id="btnSrSaveToCentral" class="btn btn-sm btn-outline" title="Guardar esta regla en tu lista centralizada de reemplazos">
+                    ➕ Guardar en frecuentes
+                  </button>
+                </div>
+                <span id="srStatusText" class="sr-status-text"></span>
+              </div>
+            </div>
+
+            <!-- Centralized Replacements Warning Banner -->
+            <div id="replacementsAlertBanner" class="replacements-alert-banner" style="display: none;">
+              <div class="alert-banner-header">
+                <div class="alert-banner-title-group">
+                  <span class="alert-banner-icon">⚡</span>
+                  <div>
+                    <h4 class="alert-banner-title">Términos frecuentes detectados por corregir</h4>
+                    <span class="alert-banner-subtitle" id="repAlertSubtitle">Se encontraron palabras de tu lista centralizada en esta transcripción.</span>
+                  </div>
+                </div>
+                <div class="alert-banner-actions">
+                  <button type="button" id="btnApplyAllDetectedRep" class="btn btn-sm btn-warning">
+                    ⚡ Reemplazar Todos (<span id="repAlertTotalCount">0</span>)
+                  </button>
+                  <button type="button" id="btnOpenRepFromBanner" class="btn btn-sm btn-secondary" title="Administrar lista centralizada">
+                    📚 Gestionar Lista
+                  </button>
+                  <button type="button" id="btnDismissRepAlert" class="btn-icon-subtle" title="Ocultar advertencia">&times;</button>
+                </div>
+              </div>
+              <div class="alert-chips-container" id="repAlertChips">
+                <!-- Chips populated dynamically -->
               </div>
             </div>
 
@@ -394,6 +469,74 @@
       </div>
       <div class="modal-footer">
         <button id="btnCloseLogs" class="btn btn-secondary">Cerrar</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- Centralized Replacements Modal -->
+  <div class="modal-overlay" id="replacementsModal" style="display: none;">
+    <div class="modal-card modal-large">
+      <div class="modal-header">
+        <div class="modal-title-group">
+          <h3 id="replacementsModalTitle">📚 Lista Centralizada de Reemplazos</h3>
+          <span class="modal-subtitle">Corrección automática y advertencias para tecnicismos y palabras recurrentes mal transcritas por la IA</span>
+        </div>
+        <button id="btnCloseReplacementsModal" class="btn-close">&times;</button>
+      </div>
+      <div class="modal-body">
+        <!-- Add New Replacement Form -->
+        <div class="rep-form-card">
+          <h4 class="rep-section-title" id="repFormTitle">➕ Agregar Nuevo Término de Reemplazo</h4>
+          <input type="hidden" id="inputEditRepId" value="" />
+          <div class="rep-form-grid">
+            <div class="form-group">
+              <label for="inputNewRepFind">Palabra o frase incorrecta (IA):</label>
+              <input type="text" id="inputNewRepFind" placeholder="Ej: Cuvernetes, Paithon, Dokker, AP I" autocomplete="off" />
+            </div>
+            <div class="form-group">
+              <label for="inputNewRepReplace">Reemplazar por (Correcta):</label>
+              <input type="text" id="inputNewRepReplace" placeholder="Ej: Kubernetes, Python, Docker, API" autocomplete="off" />
+            </div>
+          </div>
+          <div class="rep-form-footer">
+            <div class="rep-form-options">
+              <label class="sr-checkbox-label" title="Coincidir únicamente con palabras completas">
+                <input type="checkbox" id="checkNewRepWholeWord" checked />
+                <span>Palabra completa (Recomendado)</span>
+              </label>
+              <label class="sr-checkbox-label" title="Diferenciar mayúsculas de minúsculas">
+                <input type="checkbox" id="checkNewRepCase" />
+                <span>Sensible a mayúsculas</span>
+              </label>
+            </div>
+            <div class="rep-form-btns">
+              <button type="button" id="btnCancelEditRep" class="btn btn-sm btn-secondary" style="display: none;">Cancelar</button>
+              <button type="button" id="btnAddNewReplacement" class="btn btn-primary">+ Guardar Término</button>
+            </div>
+          </div>
+        </div>
+
+        <!-- Replacements List Header & Filter -->
+        <div class="rep-list-header">
+          <div class="rep-filter-box">
+            <span class="search-icon">🔍</span>
+            <input type="text" id="repFilterInput" placeholder="Filtrar reemplazos guardados..." />
+          </div>
+          <span id="repTotalRulesBadge" class="rep-rules-badge">0 reglas</span>
+        </div>
+
+        <!-- Replacements Table / List -->
+        <div class="rep-items-list" id="repItemsList">
+          <div class="rep-empty-state">No hay reglas de reemplazo guardadas todavía.</div>
+        </div>
+      </div>
+      <div class="modal-footer">
+        <div class="modal-footer-left">
+          <button type="button" id="btnModalApplyAllToMeeting" class="btn btn-warning" style="display: none;">
+            ⚡ Reemplazar coincidencias en esta llamada (<span id="modalMatchesCount">0</span>)
+          </button>
+        </div>
+        <button id="btnExitReplacementsModal" class="btn btn-secondary">Cerrar</button>
       </div>
     </div>
   </div>
