@@ -13,11 +13,39 @@ from error_logger import log_transcription_error, log_transcription_warning
 
 CONFIG_PATH = os.path.expanduser("~/.call_recorder_config.json")
 
+DEFAULT_SUPPORTED_MODELS = [
+    {
+        "id": "gemini-2.0-flash-lite",
+        "name": "Gemini 2.0 Flash Lite (Recomendado - Rápido, económico y disponible)",
+        "is_default": True
+    },
+    {
+        "id": "gemini-2.0-flash",
+        "name": "Gemini 2.0 Flash (Equilibrado y preciso)",
+        "is_default": False
+    },
+    {
+        "id": "gemini-2.5-flash",
+        "name": "Gemini 2.5 Flash (Avanzado)",
+        "is_default": False
+    },
+    {
+        "id": "gemini-2.5-pro",
+        "name": "Gemini 2.5 Pro (Máxima capacidad)",
+        "is_default": False
+    },
+    {
+        "id": "gemini-1.5-flash",
+        "name": "Gemini 1.5 Flash (Legado)",
+        "is_default": False
+    }
+]
+
 def get_saved_config() -> Dict[str, Any]:
     """Reads configuration from ~/.call_recorder_config.json or .env."""
     config = {
         "gemini_api_key": os.environ.get("GEMINI_API_KEY", ""),
-        "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-2.5-flash"),
+        "gemini_model": os.environ.get("GEMINI_MODEL", "gemini-2.0-flash-lite"),
     }
     if os.path.exists(CONFIG_PATH):
         try:
@@ -62,13 +90,19 @@ class GeminiTranscriber:
     Outputs structured JSON with timestamps and speaker identifiers.
     """
 
-    DEFAULT_PROMPT = """Eres un transcriptor profesional de reuniones y llamadas de alta precisión.
-Transcribe el audio completo en su idioma original (ej. español) con diarización de interlocutores (ej. "Speaker 1", "Speaker 2", etc.).
+    DEFAULT_PROMPT = """Eres un transcriptor profesional de reuniones y llamadas de alta precisión con maestría en diarización de interlocutores.
+Transcribe el audio completo en su idioma original (ej. español) separando rigurosamente las intervenciones de cada interlocutor.
 
-REGLAS CRÍTICAS DE SEGMENTACIÓN Y CONCISIÓN:
-1. NO dividas el audio en micro-segmentos de 1 o 2 segundos ni por palabras sueltas.
-2. Agrupa las frases continuas de un mismo interlocutor en turnos de habla naturales y completos (típicamente de 10 a 45 segundos, o párrafos enteros de conversación). Solo cambia de segmento cuando hable otra persona o haya un cambio de tema con silencio prolongado.
-3. Para mantener la respuesta ágil y completa en audios largos, NO incluyas campos redundantes de segundos o IDs; solo especifica speaker, start_time (HH:MM:SS), end_time (HH:MM:SS) y text.
+REGLAS DE DIARIZACIÓN Y SEGMENTACIÓN:
+1. DISTINCIÓN ACÚSTICA RIGUROSA: Presta atención a las diferencias vocales entre los participantes:
+   - Timbre, tono y frecuencia de la voz (agudo, medio, grave).
+   - Acústica y calidad: distingue al orador cercano al micrófono local del orador remoto (con compresión telefónica, VoIP o altavoz).
+   - Mantén la consistencia absoluta: el mismo interlocutor debe recibir siempre la misma etiqueta o nombre a lo largo de todo el audio.
+2. CAMBIOS DE TURNO EXACTOS: Inicia un NUEVO segmento cada vez que cambie la persona que habla, incluso si su intervención es breve (una pregunta corta, aclaración o respuesta). NUNCA mezcles palabras de diferentes personas en un mismo segmento.
+3. TURNOS NATURALES: Dentro del turno de una misma persona, agrupa sus oraciones continuas en un solo segmento para mantener la lectura fluida y natural.
+4. ESTRUCTURA Y CONCISIÓN: Especifica únicamente speaker, start_time (HH:MM:SS), end_time (HH:MM:SS) y text.
+
+{speakers_context_section}
 
 Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructura exacta:
 {
@@ -77,27 +111,30 @@ Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructu
     {
       "speaker": "Speaker 1",
       "start_time": "00:00:00",
-      "end_time": "00:00:28",
-      "text": "Párrafo completo con las oraciones que dijo este participante durante su intervención..."
+      "end_time": "00:00:15",
+      "text": "Intervención del primer participante..."
     },
     {
       "speaker": "Speaker 2",
-      "start_time": "00:00:29",
-      "end_time": "00:01:05",
-      "text": "Respuesta completa del segundo participante..."
+      "start_time": "00:00:16",
+      "end_time": "00:00:32",
+      "text": "Respuesta del segundo participante..."
     }
   ]
 }
 No incluyas texto explicativo antes ni después del JSON.
 """
 
-    DEFAULT_SEGMENT_PROMPT = """Eres un transcriptor profesional de reuniones y llamadas de alta precisión.
-Transcribe este segmento de audio en su idioma original (ej. español) con diarización de interlocutores (ej. "Speaker 1", "Speaker 2", etc.).
+    DEFAULT_SEGMENT_PROMPT = """Eres un transcriptor profesional de reuniones y llamadas de alta precisión con maestría en diarización de interlocutores.
+Transcribe este segmento de audio en su idioma original (ej. español) separando rigurosamente a cada interlocutor.
 
-REGLAS CRÍTICAS DE SEGMENTACIÓN:
-1. Agrupa las frases continuas de un mismo interlocutor en turnos de habla naturales y completos. Solo cambia de segmento cuando hable otra persona o haya una pausa clara.
-2. Especifica speaker, start_time (HH:MM:SS o MM:SS relativo al segmento), end_time (HH:MM:SS o MM:SS) y text.
-3. Si en este intervalo no hay voces audibles o solo hay silencio/música de fondo, devuelve "segments": [].
+REGLAS DE DIARIZACIÓN Y SEGMENTACIÓN:
+1. DISTINCIÓN ACÚSTICA: Identifica los cambios de interlocutor prestando estricta atención al timbre, tono de voz y acústica.
+2. CAMBIO DE TURNO: Inicia un nuevo segmento cada vez que otra persona hable, incluso para intervenciones breves. NUNCA mezcles a dos personas en un mismo segmento.
+3. Especifica speaker, start_time (HH:MM:SS o MM:SS relativo al segmento), end_time (HH:MM:SS o MM:SS) y text.
+4. Si en este intervalo no hay voces audibles o solo hay silencio/música de fondo, devuelve "segments": [].
+
+{speakers_context_section}
 
 Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructura exacta:
 {
@@ -114,10 +151,102 @@ Debes responder ÚNICAMENTE con un objeto JSON válido con la siguiente estructu
 No incluyas texto explicativo antes ni después del JSON.
 """
 
-    def __init__(self, api_key: Optional[str] = None, model: str = "gemini-2.5-flash"):
+    @classmethod
+    def build_prompt(cls, base_prompt: str, speakers_context: Optional[str] = None) -> str:
+        """Injects speaker/participant context into the transcription prompt."""
+        if speakers_context and str(speakers_context).strip():
+            ctx = (
+                "CONTEXTO DE PARTICIPANTES EN ESTA LLAMADA:\n"
+                f"- Participantes identificados / esperados: {str(speakers_context).strip()}.\n"
+                "- Asigna DIRECTAMENTE estos nombres a los interlocutores identificando sus voces de manera consistente "
+                "(en el campo 'speaker' y en la lista 'speakers'), en lugar de usar etiquetas genéricas como 'Speaker 1'."
+            )
+        else:
+            ctx = (
+                "IDENTIFICADORES: Si no se conocen los nombres específicos de antemano, utiliza identificadores claros "
+                "y consistentes como 'Speaker 1', 'Speaker 2', etc., manteniendo la misma etiqueta para la misma voz en todo el audio."
+            )
+        if "{speakers_context_section}" in base_prompt:
+            return base_prompt.replace("{speakers_context_section}", ctx)
+        elif speakers_context and str(speakers_context).strip():
+            return f"{base_prompt}\n\n{ctx}"
+        return base_prompt
+
+    @classmethod
+    def list_available_models(cls, api_key: Optional[str] = None) -> list:
+        """
+        Queries Google Gemini API for available models supporting generateContent.
+        Falls back to DEFAULT_SUPPORTED_MODELS if query fails or api_key is missing.
+        """
+        key = api_key or get_saved_config().get("gemini_api_key", "")
+        if not key:
+            return list(DEFAULT_SUPPORTED_MODELS)
+
+        url = f"https://generativelanguage.googleapis.com/v1beta/models?key={key}"
+        try:
+            req = urllib.request.Request(url, headers={"User-Agent": "CallRecorder/1.0"})
+            with urllib.request.urlopen(req, timeout=8) as resp:
+                data = json.loads(resp.read().decode("utf-8"))
+
+            models_data = data.get("models", [])
+            available = []
+            for m in models_data:
+                methods = m.get("supportedGenerationMethods", [])
+                if "generateContent" not in methods:
+                    continue
+
+                raw_name = m.get("name", "")
+                model_id = raw_name.replace("models/", "").strip()
+                low_id = model_id.lower()
+                if any(skip in low_id for skip in ["embedding", "aqa", "imagen", "tts", "whisper", "learnlm"]):
+                    continue
+
+                display_name = m.get("displayName") or model_id
+                if "flash-lite" in low_id or "lite" in low_id:
+                    label = f"⚡ {display_name} [Lite - Rápido y económico]"
+                elif "flash" in low_id:
+                    label = f"✨ {display_name} [Flash - Balanceado]"
+                elif "pro" in low_id:
+                    label = f"🧠 {display_name} [Pro - Máxima capacidad]"
+                else:
+                    label = f"🤖 {display_name} ({model_id})"
+
+                is_def = ("2.0-flash-lite" in low_id or "flash-lite" in low_id)
+                available.append({
+                    "id": model_id,
+                    "name": label,
+                    "display_name": display_name,
+                    "is_default": is_def
+                })
+
+            if available:
+                def sort_key(item):
+                    mid = item["id"].lower()
+                    if "2.0-flash-lite" in mid:
+                        return (0, mid)
+                    elif "flash-lite" in mid:
+                        return (1, mid)
+                    elif "2.0-flash" in mid:
+                        return (2, mid)
+                    elif "2.5-flash" in mid:
+                        return (3, mid)
+                    elif "flash" in mid:
+                        return (4, mid)
+                    elif "pro" in mid:
+                        return (5, mid)
+                    return (6, mid)
+
+                available.sort(key=sort_key)
+                return available
+        except Exception as e:
+            print(f"Error fetching Gemini models from Google API: {e}")
+
+        return list(DEFAULT_SUPPORTED_MODELS)
+
+    def __init__(self, api_key: Optional[str] = None, model: Optional[str] = None):
         config = get_saved_config()
         self.api_key = api_key or config.get("gemini_api_key", "")
-        self.model = model or config.get("gemini_model", "gemini-2.5-flash")
+        self.model = model or config.get("gemini_model", "gemini-2.0-flash-lite")
 
     def _prepare_optimized_audio(self, audio_path: str) -> Tuple[str, str, bool, float]:
         """
@@ -149,7 +278,11 @@ No incluyas texto explicativo antes ni después del JSON.
             if sr > 24000:
                 if sr % target_sr == 0:
                     step = sr // target_sr
-                    data = data[::step]
+                    if len(data) >= step:
+                        cutoff = len(data) - (len(data) % step)
+                        data = data[:cutoff].reshape(-1, step).mean(axis=1)
+                    else:
+                        data = data[::step]
                 else:
                     step = sr / target_sr
                     indices = np.round(np.arange(0, len(data), step)).astype(np.int64)
@@ -283,7 +416,12 @@ No incluyas texto explicativo antes ni después del JSON.
         except Exception:
             pass
 
-    def transcribe_audio(self, audio_path: str, custom_prompt: Optional[str] = None) -> Dict[str, Any]:
+    def transcribe_audio(
+        self,
+        audio_path: str,
+        custom_prompt: Optional[str] = None,
+        speakers_context: Optional[str] = None
+    ) -> Dict[str, Any]:
         """
         Transcribes the given audio file using Gemini API.
         Returns the parsed JSON response with speakers and segments.
@@ -294,7 +432,8 @@ No incluyas texto explicativo antes ni después del JSON.
         if not os.path.isfile(audio_path):
             raise FileNotFoundError(f"Archivo de audio no encontrado: {audio_path}")
 
-        prompt_text = custom_prompt or self.DEFAULT_PROMPT
+        prompt_template = custom_prompt or self.DEFAULT_PROMPT
+        prompt_text = self.build_prompt(prompt_template, speakers_context)
 
         # Optimize audio if needed and calculate duration
         upload_path, mime_type, is_temp, duration_sec = self._prepare_optimized_audio(audio_path)
@@ -432,7 +571,8 @@ No incluyas texto explicativo antes ni después del JSON.
         audio_path: str,
         start_seconds: float,
         end_seconds: Optional[float] = None,
-        custom_prompt: Optional[str] = None
+        custom_prompt: Optional[str] = None,
+        speakers_context: Optional[str] = None
     ) -> Dict[str, Any]:
         """
         Transcribes a specific time segment [start_seconds, end_seconds] of the audio file.
@@ -492,24 +632,15 @@ No incluyas texto explicativo antes ni después del JSON.
             if len(data.shape) > 1 and data.shape[1] > 1:
                 data = data.mean(axis=1)
 
-            # Resample to 16kHz if rate is high to save bandwidth
-            target_sr = 16000
-            if sr > 24000:
-                if sr % target_sr == 0:
-                    step = sr // target_sr
-                    data = data[::step]
-                else:
-                    step = sr / target_sr
-                    indices = np.round(np.arange(0, len(data), step)).astype(np.int64)
-                    indices = indices[indices < len(data)]
-                    data = data[indices]
-                sr = target_sr
-
-            # Write temporary slice file
+            # Write temporary slice file preserving sample rate for high fidelity
             sf.write(temp_slice_path, data, sr, subtype='PCM_16')
 
             prompt_to_use = custom_prompt or self.DEFAULT_SEGMENT_PROMPT
-            result = self.transcribe_audio(temp_slice_path, custom_prompt=prompt_to_use)
+            result = self.transcribe_audio(
+                temp_slice_path,
+                custom_prompt=prompt_to_use,
+                speakers_context=speakers_context
+            )
 
             # Offset segment timestamps to full recording timeline
             segments = result.get("segments", [])

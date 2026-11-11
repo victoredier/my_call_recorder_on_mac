@@ -139,5 +139,33 @@ class TestUIAssets(unittest.TestCase):
         self.assertIn("closeReplacementsModal", js)
         self.assertIn("/api/replacements", js)
 
+    def test_models_and_participants_ui_assets(self):
+        html_path = os.path.join(self.web_dir, "index.html")
+        with open(html_path, "r", encoding="utf-8") as f:
+            html = f.read()
+
+        self.assertIn('id="inputParticipantsContext"', html)
+        self.assertIn('id="btnRefreshModels"', html)
+        self.assertIn('id="btnConfigRefreshModels"', html)
+        self.assertIn('id="segmentParticipantsContext"', html)
+        self.assertIn('gemini-2.0-flash-lite', html)
+
+        css_path = os.path.join(self.web_dir, "style.css")
+        with open(css_path, "r", encoding="utf-8") as f:
+            css = f.read()
+
+        self.assertIn(".context-toolbar-row", css)
+        self.assertIn(".context-input-wrapper", css)
+        self.assertIn(".input-context", css)
+
+        js_path = os.path.join(self.web_dir, "app.js")
+        with open(js_path, "r", encoding="utf-8") as f:
+            js = f.read()
+
+        self.assertIn("fetchAvailableModels", js)
+        self.assertIn("updateModelSelectOptions", js)
+        self.assertIn("speakers_context", js)
+        self.assertIn("/api/gemini/models", js)
+
 if __name__ == "__main__":
     unittest.main()

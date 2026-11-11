@@ -1,4 +1,5 @@
 import os
+import json
 import tempfile
 import unittest
 import numpy as np
@@ -156,6 +157,63 @@ class TestGeminiParser(unittest.TestCase):
         finally:
             if os.path.exists(temp_wav):
                 os.remove(temp_wav)
+
+    def test_build_prompt_with_and_without_context(self):
+        prompt_no_ctx = GeminiTranscriber.build_prompt(GeminiTranscriber.DEFAULT_PROMPT, None)
+        self.assertIn("IDENTIFICADORES:", prompt_no_ctx)
+        self.assertNotIn("{speakers_context_section}", prompt_no_ctx)
+
+        prompt_with_ctx = GeminiTranscriber.build_prompt(
+            GeminiTranscriber.DEFAULT_PROMPT,
+            "Víctor (yo) y Carlos (cliente)"
+        )
+        self.assertIn("CONTEXTO DE PARTICIPANTES EN ESTA LLAMADA:", prompt_with_ctx)
+        self.assertIn("Víctor (yo) y Carlos (cliente)", prompt_with_ctx)
+        self.assertNotIn("{speakers_context_section}", prompt_with_ctx)
+
+    def test_list_available_models_fallback(self):
+        models = GeminiTranscriber.list_available_models(api_key="")
+        self.assertIsInstance(models, list)
+        self.assertTrue(len(models) >= 3)
+        model_ids = [m["id"] for m in models]
+        self.assertIn("gemini-2.0-flash-lite", model_ids)
+        self.assertIn("gemini-2.0-flash", model_ids)
+
+    def test_list_available_models_mock_api(self):
+        from unittest.mock import patch, MagicMock
+        import io
+
+        fake_api_response = {
+            "models": [
+                {
+                    "name": "models/gemini-2.0-flash-lite",
+                    "displayName": "Gemini 2.0 Flash Lite",
+                    "supportedGenerationMethods": ["generateContent", "countTokens"]
+                },
+                {
+                    "name": "models/gemini-embedding-001",
+                    "displayName": "Embedding Model",
+                    "supportedGenerationMethods": ["embedContent"]
+                },
+                {
+                    "name": "models/gemini-2.0-flash",
+                    "displayName": "Gemini 2.0 Flash",
+                    "supportedGenerationMethods": ["generateContent"]
+                }
+            ]
+        }
+
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = json.dumps(fake_api_response).encode("utf-8")
+        mock_resp.__enter__.return_value = mock_resp
+
+        with patch("urllib.request.urlopen", return_value=mock_resp):
+            models = GeminiTranscriber.list_available_models(api_key="valid-dummy-key")
+            model_ids = [m["id"] for m in models]
+            self.assertIn("gemini-2.0-flash-lite", model_ids)
+            self.assertIn("gemini-2.0-flash", model_ids)
+            # Embeddings model should be excluded
+            self.assertNotIn("gemini-embedding-001", model_ids)
 
 if __name__ == "__main__":
     unittest.main()

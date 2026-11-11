@@ -120,29 +120,43 @@
 
           <!-- Action Toolbar -->
           <div class="card actions-toolbar">
-            <div class="transcribe-group">
-              <button id="btnTranscribe" class="btn btn-gemini" title="Transcribir la llamada completa con Gemini">
-                <span class="gemini-sparkle">✨</span> Transcribir Todo
-              </button>
-              <button id="btnOpenSegmentModal" class="btn btn-secondary btn-segment" title="Transcribir solo un tramo de tiempo seleccionado de la llamada">
-                ⏱️ Transcribir Segmento...
-              </button>
-              <select id="selectModel" class="select-model">
-                <option value="gemini-2.5-flash">Gemini 2.5 Flash (Rápido y preciso)</option>
-                <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-                <option value="gemini-2.5-pro">Gemini 2.5 Pro (Máxima capacidad)</option>
-              </select>
+            <div class="toolbar-top-row">
+              <div class="transcribe-group">
+                <button id="btnTranscribe" class="btn btn-gemini" title="Transcribir la llamada completa con Gemini">
+                  <span class="gemini-sparkle">✨</span> Transcribir Todo
+                </button>
+                <button id="btnOpenSegmentModal" class="btn btn-secondary btn-segment" title="Transcribir solo un tramo de tiempo seleccionado de la llamada">
+                  ⏱️ Transcribir Segmento...
+                </button>
+                <div class="model-picker-wrapper">
+                  <select id="selectModel" class="select-model" title="Modelo de Gemini para transcripción">
+                    <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite (Recomendado - Rápido y disponible)</option>
+                    <option value="gemini-2.0-flash">Gemini 2.0 Flash (Equilibrado y preciso)</option>
+                    <option value="gemini-2.5-flash">Gemini 2.5 Flash (Avanzado)</option>
+                    <option value="gemini-2.5-pro">Gemini 2.5 Pro (Máxima capacidad)</option>
+                    <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legado)</option>
+                  </select>
+                  <button type="button" id="btnRefreshModels" class="btn btn-secondary btn-icon-only" title="Detectar modelos activos con tu API Key">🔄</button>
+                </div>
+              </div>
+              <div class="export-group">
+                <button id="btnSaveTranscript" class="btn btn-primary" title="Guardar cambios de texto y speakers">
+                  💾 Guardar Cambios
+                </button>
+                <button id="btnExportJson" class="btn btn-secondary" title="Descargar transcript.json">
+                  📥 Exportar JSON
+                </button>
+                <button id="btnCopyText" class="btn btn-secondary" title="Copiar texto con formato">
+                  📋 Copiar
+                </button>
+              </div>
             </div>
-            <div class="export-group">
-              <button id="btnSaveTranscript" class="btn btn-primary" title="Guardar cambios de texto y speakers">
-                💾 Guardar Cambios
-              </button>
-              <button id="btnExportJson" class="btn btn-secondary" title="Descargar transcript.json">
-                📥 Exportar JSON
-              </button>
-              <button id="btnCopyText" class="btn btn-secondary" title="Copiar texto con formato">
-                📋 Copiar
-              </button>
+            <!-- Context / Participants row for smart speaker diarization -->
+            <div class="context-toolbar-row">
+              <div class="context-input-wrapper">
+                <span class="context-icon" title="Participantes">👥</span>
+                <input type="text" id="inputParticipantsContext" class="input-context" placeholder="Participantes o roles (opcional, ej: Víctor y Cliente) para identificar voces automáticamente sin editar manual..." title="Indica quiénes participan para que Gemini identifique y asigne sus nombres directamente" />
+              </div>
             </div>
           </div>
 
@@ -361,10 +375,19 @@
         <div class="form-group">
           <label for="segmentModelSelect">Modelo Gemini:</label>
           <select id="segmentModelSelect">
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado - Rápido y preciso)</option>
-            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
+            <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite (Recomendado - Rápido y disponible)</option>
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash (Equilibrado y preciso)</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Avanzado)</option>
             <option value="gemini-2.5-pro">Gemini 2.5 Pro (Máxima capacidad)</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legado)</option>
           </select>
+        </div>
+
+        <!-- Participants Context for Segment -->
+        <div class="form-group">
+          <label for="segmentParticipantsContext">Participantes / Contexto (opcional):</label>
+          <input type="text" id="segmentParticipantsContext" placeholder="ej: Víctor, Carlos" />
+          <small class="form-help">Ayuda a la IA a distinguir con precisión las voces y asignar sus nombres reales.</small>
         </div>
 
         <!-- Integration Mode Option -->
@@ -423,10 +446,18 @@
         <div class="form-group">
           <label for="defaultModelSelect">Modelo Gemini por Defecto:</label>
           <select id="defaultModelSelect">
-            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Recomendado)</option>
-            <option value="gemini-1.5-flash">Gemini 1.5 Flash</option>
-            <option value="gemini-2.5-pro">Gemini 2.5 Pro</option>
+            <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite (Recomendado - Rápido y disponible)</option>
+            <option value="gemini-2.0-flash">Gemini 2.0 Flash (Equilibrado y preciso)</option>
+            <option value="gemini-2.5-flash">Gemini 2.5 Flash (Avanzado)</option>
+            <option value="gemini-2.5-pro">Gemini 2.5 Pro (Máxima capacidad)</option>
+            <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legado)</option>
           </select>
+          <div style="margin-top: 8px; display: flex; align-items: center; gap: 8px;">
+            <button type="button" id="btnConfigRefreshModels" class="btn btn-secondary btn-sm" title="Consultar modelos disponibles en tu cuenta de Google">
+              🔄 Detectar modelos de mi cuenta
+            </button>
+            <span id="modelsDetectStatus" style="font-size: 12px; color: var(--text-secondary);"></span>
+          </div>
         </div>
         <div class="form-group">
           <label>Carpeta de grabaciones:</label>

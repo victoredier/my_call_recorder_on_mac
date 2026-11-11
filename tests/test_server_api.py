@@ -232,5 +232,28 @@ class TestServerHandlerDirect(unittest.TestCase):
         self.assertTrue(del_res["success"])
         self.assertEqual(len(del_res["replacements"]), 0)
 
+    def test_gemini_models_api(self):
+        status_line, _, body = self._run_request("GET", "/api/gemini/models")
+        self.assertIn("200", status_line)
+        res = json.loads(body.decode("utf-8"))
+        self.assertTrue(res["success"])
+        self.assertIsInstance(res["models"], list)
+        self.assertTrue(len(res["models"]) >= 3)
+        ids = [m["id"] for m in res["models"]]
+        self.assertIn("gemini-2.0-flash-lite", ids)
+
+    def test_storage_get_transcript(self):
+        m = self.storage.create_meeting(name="Transcript Retrieval Test")
+        self.assertIsNone(self.storage.get_transcript(m["id"]))
+        sample_transcript = {
+            "speakers": ["Víctor", "Carlos"],
+            "speaker_mapping": {"Víctor": "Víctor", "Carlos": "Carlos"},
+            "segments": [{"speaker": "Víctor", "text": "Hola mundo"}]
+        }
+        self.storage.save_transcript(m["id"], sample_transcript)
+        fetched = self.storage.get_transcript(m["id"])
+        self.assertIsNotNone(fetched)
+        self.assertEqual(fetched["speakers"], ["Víctor", "Carlos"])
+
 if __name__ == "__main__":
     unittest.main()

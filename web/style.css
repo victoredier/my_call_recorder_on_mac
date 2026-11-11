@@ -592,17 +592,76 @@ body {
 /* Actions Toolbar */
 .actions-toolbar {
   display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px 18px;
+}
+
+.toolbar-top-row {
+  display: flex;
   justify-content: space-between;
   align-items: center;
   flex-wrap: wrap;
   gap: 12px;
-  padding: 14px 18px;
+  width: 100%;
 }
 
 .transcribe-group {
   display: flex;
   align-items: center;
   gap: 10px;
+  flex-wrap: wrap;
+}
+
+.model-picker-wrapper {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+}
+
+.context-toolbar-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  padding-top: 10px;
+  border-top: 1px solid var(--border-color);
+}
+
+.context-input-wrapper {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-color);
+  border-radius: var(--radius-sm);
+  padding: 6px 12px;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.context-input-wrapper:focus-within {
+  border-color: var(--accent-color);
+  box-shadow: 0 0 0 2px rgba(99, 102, 241, 0.15);
+}
+
+.context-icon {
+  font-size: 14px;
+  opacity: 0.85;
+  user-select: none;
+}
+
+.input-context {
+  flex: 1;
+  background: transparent;
+  border: none;
+  color: var(--text-primary);
+  font-size: 13px;
+  outline: none;
+  width: 100%;
+}
+
+.input-context::placeholder {
+  color: var(--text-muted);
 }
 
 .select-model {
@@ -613,6 +672,22 @@ body {
   border-radius: var(--radius-sm);
   font-size: 13px;
   outline: none;
+}
+
+.btn-icon-only {
+  padding: 7px 10px;
+  font-size: 13px;
+  border-radius: var(--radius-sm);
+}
+
+.rotating {
+  animation: spin 1s linear infinite;
+}
+
+@keyframes spin {
+  100% {
+    transform: rotate(360deg);
+  }
 }
 
 .export-group {

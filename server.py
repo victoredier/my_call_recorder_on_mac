@@ -101,9 +101,17 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
             self._send_json({
                 "has_api_key": bool(raw_key),
                 "masked_api_key": masked,
-                "gemini_model": cfg.get("gemini_model", "gemini-2.5-flash"),
+                "gemini_model": cfg.get("gemini_model", "gemini-2.0-flash-lite"),
                 "recordings_path": self.storage_manager.base_path
             })
+            return
+
+        # API: Get available Gemini models /api/gemini/models
+        if path == "/api/gemini/models":
+            query_params = parse_qs(parsed_url.query)
+            custom_api_key = query_params.get("key", [None])[0]
+            models = GeminiTranscriber.list_available_models(api_key=custom_api_key)
+            self._send_json({"success": True, "models": models})
             return
 
         # API: Single meeting details /api/meetings/<id>
@@ -277,6 +285,17 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
             else:
                 end_seconds = None
 
+            speakers_context = body.get("speakers_context")
+            if not speakers_context:
+                existing_transcript = self.storage_manager.get_transcript(meeting_id)
+                if existing_transcript:
+                    spks = existing_transcript.get("speakers", [])
+                    mapping = existing_transcript.get("speaker_mapping", {})
+                    mapped_names = [mapping.get(s, s) for s in spks if mapping.get(s, s)]
+                    named = [n for n in mapped_names if not re.match(r"^Speaker\s*\d+$", n, re.IGNORECASE)]
+                    if named:
+                        speakers_context = ", ".join(dict.fromkeys(named))
+
             # Update status to transcribing
             self.storage_manager.update_status(meeting_id, "transcribing")
 
@@ -286,7 +305,8 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
                 transcript_result = transcriber.transcribe_segment(
                     audio_path,
                     start_seconds=start_seconds,
-                    end_seconds=end_seconds
+                    end_seconds=end_seconds,
+                    speakers_context=speakers_context
                 )
 
                 updated_meeting = self.storage_manager.merge_transcript_segment(
@@ -335,6 +355,17 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
             custom_api_key = body.get("gemini_api_key")
             custom_model = body.get("gemini_model")
 
+            speakers_context = body.get("speakers_context")
+            if not speakers_context:
+                existing_transcript = self.storage_manager.get_transcript(meeting_id)
+                if existing_transcript:
+                    spks = existing_transcript.get("speakers", [])
+                    mapping = existing_transcript.get("speaker_mapping", {})
+                    mapped_names = [mapping.get(s, s) for s in spks if mapping.get(s, s)]
+                    named = [n for n in mapped_names if not re.match(r"^Speaker\s*\d+$", n, re.IGNORECASE)]
+                    if named:
+                        speakers_context = ", ".join(dict.fromkeys(named))
+
             # Check if request specifies a segment range
             if body.get("start_seconds") is not None or body.get("is_segment"):
                 raw_start = body.get("start_seconds", 0.0)
@@ -366,7 +397,8 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
                     transcript_result = transcriber.transcribe_segment(
                         audio_path,
                         start_seconds=start_seconds,
-                        end_seconds=end_seconds
+                        end_seconds=end_seconds,
+                        speakers_context=speakers_context
                     )
 
                     updated_meeting = self.storage_manager.merge_transcript_segment(
@@ -405,7 +437,7 @@ class CallRecorderHandler(BaseHTTPRequestHandler):
             try:
                 transcriber = GeminiTranscriber(api_key=custom_api_key, model=custom_model)
                 audio_path = meeting["audio_path"]
-                transcript_result = transcriber.transcribe_audio(audio_path)
+                transcript_result = transcriber.transcribe_audio(audio_path, speakers_context=speakers_context)
                 
                 # Attach meeting metadata into transcript
                 transcript_result["meeting_id"] = meeting.get("id")

@@ -39,6 +39,8 @@ const btnOpenSegmentModal = document.getElementById("btnOpenSegmentModal");
 const btnAudioCardSegment = document.getElementById("btnAudioCardSegment");
 const btnTranscriptHeaderSegment = document.getElementById("btnTranscriptHeaderSegment");
 const selectModel = document.getElementById("selectModel");
+const btnRefreshModels = document.getElementById("btnRefreshModels");
+const inputParticipantsContext = document.getElementById("inputParticipantsContext");
 const btnSaveTranscript = document.getElementById("btnSaveTranscript");
 const btnExportJson = document.getElementById("btnExportJson");
 const btnCopyText = document.getElementById("btnCopyText");
@@ -76,6 +78,7 @@ const segmentRangeSummary = document.getElementById("segmentRangeSummary");
 const btnPreviewSegmentAudio = document.getElementById("btnPreviewSegmentAudio");
 const btnStopPreviewSegmentAudio = document.getElementById("btnStopPreviewSegmentAudio");
 const segmentModelSelect = document.getElementById("segmentModelSelect");
+const segmentParticipantsContext = document.getElementById("segmentParticipantsContext");
 const mergeOptionGroup = document.getElementById("mergeOptionGroup");
 
 let isSegmentPreviewActive = false;
@@ -88,6 +91,8 @@ const btnSaveConfig = document.getElementById("btnSaveConfig");
 const inputApiKey = document.getElementById("inputApiKey");
 const btnToggleApiKey = document.getElementById("btnToggleApiKey");
 const defaultModelSelect = document.getElementById("defaultModelSelect");
+const btnConfigRefreshModels = document.getElementById("btnConfigRefreshModels");
+const modelsDetectStatus = document.getElementById("modelsDetectStatus");
 const displayRecordingsPath = document.getElementById("displayRecordingsPath");
 
 // Search & Replace DOM Elements
@@ -163,6 +168,44 @@ function showToast(message, duration = 3000) {
 }
 
 // --- API Calls ---
+async function fetchAvailableModels(apiKey = null) {
+  try {
+    const url = apiKey ? `/api/gemini/models?key=${encodeURIComponent(apiKey)}` : `/api/gemini/models`;
+    const res = await fetch(url);
+    const data = await res.json();
+    if (data.success && Array.isArray(data.models) && data.models.length > 0) {
+      updateModelSelectOptions(data.models);
+      return data.models;
+    }
+  } catch (err) {
+    console.warn("No se pudieron cargar modelos dinámicos de Gemini:", err);
+  }
+  return null;
+}
+
+function updateModelSelectOptions(models) {
+  const selects = [selectModel, segmentModelSelect, defaultModelSelect];
+  selects.forEach(sel => {
+    if (!sel) return;
+    const currentVal = sel.value;
+    sel.innerHTML = "";
+    models.forEach(m => {
+      const opt = document.createElement("option");
+      opt.value = m.id;
+      opt.textContent = m.name || m.display_name || m.id;
+      sel.appendChild(opt);
+    });
+    // Restore previous selection if still available
+    const exists = models.some(m => m.id === currentVal);
+    if (exists) {
+      sel.value = currentVal;
+    } else {
+      const defaultMod = models.find(m => m.is_default) || models[0];
+      if (defaultMod) sel.value = defaultMod.id;
+    }
+  });
+}
+
 async function loadConfig() {
   try {
     const res = await fetch("/api/config");
@@ -177,9 +220,14 @@ async function loadConfig() {
     if (data.recordings_path) {
       displayRecordingsPath.textContent = data.recordings_path;
     }
+
+    // Attempt to load dynamic models
+    await fetchAvailableModels();
+
     if (data.gemini_model) {
-      defaultModelSelect.value = data.gemini_model;
-      selectModel.value = data.gemini_model;
+      if (defaultModelSelect) defaultModelSelect.value = data.gemini_model;
+      if (selectModel) selectModel.value = data.gemini_model;
+      if (segmentModelSelect) segmentModelSelect.value = data.gemini_model;
     }
   } catch (err) {
     console.error("Error loading config:", err);
@@ -356,6 +404,17 @@ function renderMeetingDetail() {
   }
 
   hideStatusBanner();
+
+  // Populate participants context if transcript exists
+  if (inputParticipantsContext) {
+    if (selectedMeeting.transcript && Array.isArray(selectedMeeting.transcript.speakers)) {
+      const mapping = selectedMeeting.transcript.speaker_mapping || {};
+      const names = selectedMeeting.transcript.speakers.map(s => mapping[s] || s).filter(n => !/^Speaker\s*\d+$/i.test(n));
+      inputParticipantsContext.value = names.join(", ");
+    } else {
+      inputParticipantsContext.value = "";
+    }
+  }
 
   // Show or hide transcript
   renderTranscriptUI();
@@ -607,6 +666,7 @@ function setupEventListeners() {
   btnTranscribe.addEventListener("click", async () => {
     if (!selectedMeeting) return;
     const model = selectModel.value;
+    const context = inputParticipantsContext ? inputParticipantsContext.value.trim() : "";
 
     btnTranscribe.disabled = true;
     showStatusBanner("✨ Transcribiendo llamada con Gemini... Esto puede tomar desde unos segundos hasta varios minutos en grabaciones extensas. Por favor espera.", "info");
@@ -615,10 +675,19 @@ function setupEventListeners() {
       const res = await fetch(`/api/meetings/${selectedMeeting.id}/transcribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ gemini_model: model })
+        body: JSON.stringify({
+          gemini_model: model,
+          speakers_context: context
+        })
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Error al transcribir");
+      if (!res.ok) {
+        let errMsg = data.error || "Error al transcribir";
+        if (errMsg.includes("not found") || errMsg.includes("not supported") || errMsg.includes("404")) {
+          errMsg += " — Sugerencia: Selecciona 'Gemini 2.0 Flash Lite' o presiona 🔄 para actualizar los modelos activos de tu cuenta.";
+        }
+        throw new Error(errMsg);
+      }
 
       selectedMeeting = data.meeting;
       currentTranscript = selectedMeeting.transcript;
@@ -799,6 +868,37 @@ function setupEventListeners() {
       showToast(`Error: ${err.message}`);
     }
   });
+
+  if (btnRefreshModels) {
+    btnRefreshModels.addEventListener("click", async () => {
+      btnRefreshModels.classList.add("rotating");
+      const list = await fetchAvailableModels();
+      btnRefreshModels.classList.remove("rotating");
+      if (list && list.length > 0) {
+        showToast(`✅ ${list.length} modelos de Gemini detectados correctamente.`);
+      } else {
+        showToast("No se pudieron detectar modelos de la API.");
+      }
+    });
+  }
+
+  if (btnConfigRefreshModels) {
+    btnConfigRefreshModels.addEventListener("click", async () => {
+      const keyToTest = inputApiKey.value.trim();
+      const statusEl = document.getElementById("modelsDetectStatus");
+      if (statusEl) statusEl.textContent = "Consultando Google API...";
+      btnConfigRefreshModels.disabled = true;
+      const list = await fetchAvailableModels(keyToTest || null);
+      btnConfigRefreshModels.disabled = false;
+      if (list && list.length > 0) {
+        if (statusEl) statusEl.textContent = `✅ ${list.length} modelos disponibles`;
+        showToast(`Modelos actualizados: ${list.length} disponibles`);
+      } else {
+        if (statusEl) statusEl.textContent = "⚠️ No se detectaron modelos";
+        showToast("No se detectaron modelos con esa clave.");
+      }
+    });
+  }
 
   // Logs Modal Event Listeners
   const btnLogsModal = document.getElementById("btnLogsModal");
@@ -1298,6 +1398,19 @@ function openSegmentModal(initialStartSec = null, initialEndSec = null) {
     segmentModelSelect.value = selectModel.value;
   }
 
+  // Sync participants context
+  if (segmentParticipantsContext) {
+    if (inputParticipantsContext && inputParticipantsContext.value.trim()) {
+      segmentParticipantsContext.value = inputParticipantsContext.value.trim();
+    } else if (currentTranscript && currentTranscript.speakers) {
+      const mapping = currentTranscript.speaker_mapping || {};
+      const names = currentTranscript.speakers.map(s => mapping[s] || s);
+      segmentParticipantsContext.value = names.join(", ");
+    } else {
+      segmentParticipantsContext.value = "";
+    }
+  }
+
   // Ensure default merge mode is checked
   const mergeRadio = document.querySelector('input[name="segmentMergeMode"][value="merge"]');
   if (mergeRadio) mergeRadio.checked = true;
@@ -1413,6 +1526,10 @@ async function executeSegmentTranscription() {
   if (btnAudioCardSegment) btnAudioCardSegment.disabled = true;
 
   try {
+    const context = segmentParticipantsContext && segmentParticipantsContext.value.trim()
+      ? segmentParticipantsContext.value.trim()
+      : (inputParticipantsContext ? inputParticipantsContext.value.trim() : "");
+
     const res = await fetch(`/api/meetings/${selectedMeeting.id}/transcribe-segment`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
@@ -1420,12 +1537,19 @@ async function executeSegmentTranscription() {
         start_seconds: startSec,
         end_seconds: endSec,
         gemini_model: model,
-        merge_mode: mergeMode
+        merge_mode: mergeMode,
+        speakers_context: context
       })
     });
 
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Error al transcribir segmento");
+    if (!res.ok) {
+      let errMsg = data.error || "Error al transcribir segmento";
+      if (errMsg.includes("not found") || errMsg.includes("not supported") || errMsg.includes("404")) {
+        errMsg += " — Sugerencia: Selecciona 'Gemini 2.0 Flash Lite' o presiona 🔄 para actualizar los modelos activos de tu cuenta.";
+      }
+      throw new Error(errMsg);
+    }
 
     selectedMeeting = data.meeting;
     currentTranscript = selectedMeeting.transcript;

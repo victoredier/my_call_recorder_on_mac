@@ -30,9 +30,9 @@ Aplicación de barra de menú para macOS que graba llamadas y reuniones con audi
     - **Transcripción de Segmentos Específicos:** Selecciona cualquier rango de tiempo (`Desde` y `Hasta`, en formato `MM:SS`, `HH:MM:SS` o segundos, o usando la posición actual del reproductor con un clic) y pide a la IA que transcriba únicamente ese fragmento.
     - **Preescucha del segmento:** Permite escuchar el fragmento seleccionado antes de enviar la solicitud.
     - **Modo de combinación inteligente:** Puedes optar por combinar el nuevo segmento con la transcripción existente (reemplazando solo el intervalo seleccionado y preservando el resto de la reunión) o reemplazar la transcripción completa.
-    - Diarización automática de interlocutores (`Speaker 1`, `Speaker 2`, etc.).
+    - Diarización automática de interlocutores y soporte de **Contexto de Participantes** (`👥 Participantes o roles`): Indica nombres o roles (ej. `Víctor y Cliente`) para que la IA asigne directamente los nombres reales y distinga sus voces sin tener que editar manualmente después.
     - Marcas de tiempo de inicio y fin para cada intervención (ajustadas a la línea de tiempo real de la llamada).
-    - Soporte para modelos como `gemini-2.5-flash`, `gemini-1.5-flash` o `gemini-2.5-pro`.
+    - Soporte dinámico para modelos oficiales vigentes: `gemini-2.0-flash-lite` (por defecto, ultrarrápido y disponible en Free Tier), `gemini-2.0-flash`, `gemini-2.5-flash` y `gemini-2.5-pro`, con botón `🔄` para consultar en vivo los modelos activos autorizados en tu cuenta de Google.
   - **Edición y Asignación de Nombres a Speakers:**
     - Asigna nombres reales a cada participante (ej. `Speaker 1` ➔ `Víctor`, `Speaker 2` ➔ `Cliente`) y aplícalos con un clic a todos los segmentos.
     - Edita libremente los textos transcritos.

@@ -269,6 +269,11 @@ class StorageManager:
 
         return self.get_meeting(meeting_id)
 
+    def get_transcript(self, meeting_id: str) -> Optional[Dict[str, Any]]:
+        """Returns the transcript dictionary for a meeting or None."""
+        m = self.get_meeting(meeting_id)
+        return m.get("transcript") if m else None
+
     def save_transcript(self, meeting_id: str, transcript_data: Dict[str, Any]) -> bool:
         """
         Saves updated transcript and updates metadata speakers & status.
